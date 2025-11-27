@@ -1,0 +1,169 @@
+{
+  "templateId": "fc874642-eb42-4e1a-8cc5-8d6ae2d70bb3",
+  "name": "출석체크 ",
+  "fileName": "2025 Q3 Coupang 1_1 One Point Lesson  사후 자가평가 & 만족도 조사(Biz Conversation) (1).xlsx",
+  "sheetName": "Sheet1",
+  "headerRow": 1,
+  "dataStartRow": 2,
+  "columns": [
+    {
+      "column": "A",
+      "sourceField": "ID",
+      "type": "data"
+    },
+    {
+      "column": "B",
+      "sourceField": "시작 시간",
+      "type": "data"
+    },
+    {
+      "column": "C",
+      "sourceField": "완료 시간",
+      "type": "data"
+    },
+    {
+      "column": "D",
+      "sourceField": "전자 메일",
+      "type": "data"
+    },
+    {
+      "column": "E",
+      "sourceField": "이름",
+      "type": "data"
+    },
+    {
+      "column": "F",
+      "sourceField": "마지막으로 수정한 시간",
+      "type": "data"
+    },
+    {
+      "column": "G",
+      "sourceField": "성함을 작성해주세요. (예: 홍길동)",
+      "type": "data"
+    },
+    {
+      "column": "H",
+      "sourceField": "이메일을 작성해주세요. (예: @coupang.com)",
+      "type": "data"
+    },
+    {
+      "column": "I",
+      "sourceField": "영어로 발화 시 머뭇거림이 없이 유창하게 의견을 표현할 수 있는가?",
+      "type": "data"
+    },
+    {
+      "column": "J",
+      "sourceField": "복합적인 문장을 활용하여 구조적으로 발화 할 수 있는가?",
+      "type": "data"
+    },
+    {
+      "column": "K",
+      "sourceField": "문법 오류가 없이 완전한 문장으로 발화 할 수 있는가?",
+      "type": "data"
+    },
+    {
+      "column": "L",
+      "sourceField": "상황별 다양한 어휘/표현을 활용하여 발화 할 수 있는가?",
+      "type": "data"
+    },
+    {
+      "column": "M",
+      "sourceField": "상대방이 표현하는 문장들을 모두 이해할 수 있는가?",
+      "type": "data"
+    },
+    {
+      "column": "N",
+      "sourceField": "발음이 Clear하고 명확하게 발화 할 수 있는가?",
+      "type": "data"
+    },
+    {
+      "column": "O",
+      "sourceField": "나의 의견을 간결하게 전달 할 수 있는가?",
+      "type": "data"
+    },
+    {
+      "column": "P",
+      "sourceField": "Formal vs. Informal Speech에 대해 충분한 이해를 가지고 있는가?",
+      "type": "data"
+    },
+    {
+      "column": "Q",
+      "sourceField": "상대방과의 대화에서 꼬리질문을 하며 긴 대화를 이끌어 갈 수 있는가?",
+      "type": "data"
+    },
+    {
+      "column": "R",
+      "sourceField": "예상치 못한 상황에서 즉흥적으로 의사를 표현하고 답변을 할 수 있는가?",
+      "type": "data"
+    },
+    {
+      "column": "S",
+      "sourceField": "업무상 필요한 비즈니스 영어를 습득하는데 어학 과정이 유용했다고 생각하십니까?",
+      "type": "data"
+    },
+    {
+      "column": "T",
+      "sourceField": "나는 어학 과정 내 학습 방식(강의, 토의, 발표 등)이 효과적이었다고 생각한다.",
+      "type": "data"
+    },
+    {
+      "column": "U",
+      "sourceField": "나는 어학 과정에서 학습한 내용을 업무에 활용할 수 있을 것 같다.",
+      "type": "data"
+    },
+    {
+      "column": "V",
+      "sourceField": "어학 과정을 학습하기 전, 영어를 사용하는 데 얼마나 자신감이 있었습니까?",
+      "type": "data"
+    },
+    {
+      "column": "W",
+      "sourceField": "어학 과정을 학습한 후, 영어를 사용하는 데 얼마나 자신감이 있습니까?",
+      "type": "data"
+    },
+    {
+      "column": "X",
+      "sourceField": "본 교육을 동료에게 추천하시겠습니까? ",
+      "type": "data"
+    },
+    {
+      "column": "Y",
+      "sourceField": "본 교육에서 좋았던 점과 개선점에 대해 자유롭게 작성해 주시기 바랍니다.",
+      "type": "data"
+    },
+    {
+      "column": "Z",
+      "sourceField": "균등한 발화 기회",
+      "type": "data"
+    },
+    {
+      "column": "AA",
+      "sourceField": "쉽게 설명",
+      "type": "data"
+    },
+    {
+      "column": "AB",
+      "sourceField": "언어 교정 및 피드백",
+      "type": "data"
+    },
+    {
+      "column": "AC",
+      "sourceField": "수업 시간 준수",
+      "type": "data"
+    },
+    {
+      "column": "AD",
+      "sourceField": "강의 준비",
+      "type": "data"
+    },
+    {
+      "column": "AE",
+      "sourceField": "[Consent to collection and use of personal information]\nCarrotglobal collects the minimum amount of personal information necessary to conduct employee training, and does not use it for purposes ot...",
+      "type": "data"
+    }
+  ],
+  "preserveRows": [
+    1
+  ],
+  "createdAt": "2025-11-25T05:28:38.923Z"
+}
