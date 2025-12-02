@@ -275,8 +275,8 @@ export default function CommandPanel({
 
   return (
     <div className="h-full flex flex-col bg-[#faf9f7]">
-      {/* 채팅 영역 */}
-      <div className="flex-1 overflow-y-auto p-4">
+      {/* 채팅 영역 - 메시지가 적을 때 중앙 정렬 */}
+      <div className={`flex-1 overflow-y-auto p-4 flex flex-col ${messages.length <= 2 ? 'justify-center' : 'justify-start'}`}>
         {/* 템플릿 미선택 시 안내 */}
         {!selectedTemplate ? (
           <div className="bg-white rounded-xl p-6 border border-gray-200 text-center">

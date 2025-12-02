@@ -6,6 +6,7 @@ import FileUploadModal from '@/components/FileUploadModal';
 import TemplateSelectorPanel from '@/components/TemplateSelectorPanel';
 import MappingPreviewPanel from '@/components/MappingPreviewPanel';
 import CommandPanel from '@/components/CommandPanel';
+import ResizableDivider from '@/components/ResizableDivider';
 import { useAuth } from '@/components/AuthProvider';
 import CubeLoader from '@/components/CubeLoader';
 
@@ -390,10 +391,9 @@ export default function Home() {
       )}
 
       {step === 'data-mapping' && dataFile && dataRows && (
-        <div className="flex-1 flex overflow-hidden">
-          {/* 가운데: 매핑 미리보기 - 스크롤 가능 */}
-          <div className="flex-1 overflow-auto">
-            {!selectedTemplate ? (
+        <ResizableDivider
+          leftPanel={
+            !selectedTemplate ? (
               <TemplateSelectorPanel
                 dataFileName={dataFile.name}
                 dataHeaders={dataRows.headers}
@@ -411,11 +411,9 @@ export default function Home() {
                 onMappingChange={handleMappingChange}
                 onDownload={handleMappingConfirm}
               />
-            )}
-          </div>
-
-          {/* 오른쪽: 명령 패널 - 고정 */}
-          <div className="w-[420px] flex-shrink-0 border-l border-gray-200">
+            )
+          }
+          rightPanel={
             <CommandPanel
               mappings={mappings}
               dataHeaders={dataRows.headers}
@@ -427,8 +425,11 @@ export default function Home() {
               selectedTemplate={selectedTemplate}
               onChangeTemplate={handleChangeTemplate}
             />
-          </div>
-        </div>
+          }
+          initialRightWidth={420}
+          minRightWidth={320}
+          maxRightWidth={600}
+        />
       )}
 
       {/* 파일 업로드 모달 */}
