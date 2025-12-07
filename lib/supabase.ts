@@ -155,18 +155,28 @@ export async function uploadTemplateFile(file: File, templateId: string) {
   return urlData.publicUrl
 }
 
-// Edge Function: Generate Mapping
+// NestJS API: Generate Mapping
+const NEST_API_URL = process.env.NEXT_PUBLIC_NEST_API_URL || 'http://localhost:4000/api'
+
 export async function generateMapping(
   templateColumns: string[],
   dataColumns: string[],
   command?: string
 ) {
-  const { data, error } = await supabase.functions.invoke('generate-mapping', {
-    body: { templateColumns, dataColumns, command }
+  const response = await fetch(`${NEST_API_URL}/excel-formatter/mapping/generate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ templateColumns, dataColumns, command }),
   })
 
-  if (error) throw error
-  return data
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.message || `API error: ${response.status}`)
+  }
+
+  return response.json()
 }
 
 // Mapping History

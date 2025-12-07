@@ -82,16 +82,26 @@ export async function deleteTemplateServer(id: string) {
   if (error) throw error
 }
 
-// Edge Function: Generate Mapping
+// NestJS API: Generate Mapping
+const NEST_API_URL = process.env.NEST_API_URL || 'http://localhost:4000/api'
+
 export async function generateMappingServer(
   templateColumns: string[],
   dataColumns: string[],
   command?: string
 ) {
-  const { data, error } = await supabaseServer.functions.invoke('generate-mapping', {
-    body: { templateColumns, dataColumns, command }
+  const response = await fetch(`${NEST_API_URL}/excel-formatter/mapping/generate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ templateColumns, dataColumns, command }),
   })
 
-  if (error) throw error
-  return data
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.message || `API error: ${response.status}`)
+  }
+
+  return response.json()
 }
