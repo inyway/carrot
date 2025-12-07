@@ -76,20 +76,26 @@ export default function ResizableDivider({
       <div
         onMouseDown={handleMouseDown}
         className={`
-          w-3 flex-shrink-0 relative cursor-col-resize
+          w-2 flex-shrink-0 relative cursor-col-resize
           flex items-center justify-center
-          bg-gray-100 border-l border-r border-gray-200
-          hover:bg-gray-200 transition-colors
-          ${isDragging ? 'bg-teal-100' : ''}
+          bg-gray-200 hover:bg-teal-200 transition-colors
+          ${isDragging ? 'bg-teal-300' : ''}
+          group
         `}
       >
-        {/* 핸들 아이콘 (세로 선) */}
+        {/* 핸들 그립 아이콘 */}
         <div className="absolute inset-y-0 flex items-center justify-center">
           <div className={`
-            w-1 h-12 rounded-full bg-gray-300
-            ${isDragging ? 'bg-teal-500' : 'hover:bg-gray-400'}
-            transition-colors
-          `} />
+            flex flex-col gap-1
+            ${isDragging ? 'opacity-100' : 'opacity-50 group-hover:opacity-100'}
+            transition-opacity
+          `}>
+            <div className="w-1 h-1 rounded-full bg-gray-500" />
+            <div className="w-1 h-1 rounded-full bg-gray-500" />
+            <div className="w-1 h-1 rounded-full bg-gray-500" />
+            <div className="w-1 h-1 rounded-full bg-gray-500" />
+            <div className="w-1 h-1 rounded-full bg-gray-500" />
+          </div>
         </div>
       </div>
 

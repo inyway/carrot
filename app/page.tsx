@@ -255,67 +255,76 @@ export default function Home() {
 
   return (
     <div className="h-screen bg-gray-50 flex overflow-hidden">
-      {/* 사이드바 - 고정 */}
-      <aside className="w-16 bg-white border-r border-gray-200 flex flex-col items-center py-4 flex-shrink-0">
-        {/* 로고 - 클릭 시 홈으로 */}
+      {/* 사이드바 - 넓고 알아보기 쉽게 */}
+      <aside className="w-48 bg-white border-r border-gray-200 flex flex-col py-4 px-3 flex-shrink-0">
+        {/* 로고 & 앱 이름 */}
         <button
           onClick={goHome}
-          className="w-10 h-10 bg-teal-600 rounded-lg flex items-center justify-center mb-8 hover:bg-teal-700 transition-all"
-          title="홈으로"
+          className="flex items-center gap-3 px-3 py-2 mb-6 hover:bg-gray-50 rounded-xl transition-all"
         >
-          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
+          <div className="w-10 h-10 bg-teal-600 rounded-lg flex items-center justify-center flex-shrink-0">
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <span className="font-semibold text-gray-900">Report Tool</span>
         </button>
 
-        <nav className="flex-1 flex flex-col gap-2">
+        <nav className="flex-1 flex flex-col gap-1">
           <button
             onClick={goHome}
-            className="w-10 h-10 rounded-lg flex items-center justify-center transition-all bg-teal-50 text-teal-600"
-            title="홈"
+            className="flex items-center gap-3 px-3 py-3 rounded-xl transition-all bg-teal-50 text-teal-700 font-medium"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
+            <span>홈</span>
           </button>
           <button
             onClick={() => router.push('/templates')}
-            className="w-10 h-10 rounded-lg flex items-center justify-center transition-all hover:bg-gray-100 text-gray-500"
-            title="템플릿 관리"
+            className="flex items-center gap-3 px-3 py-3 rounded-xl transition-all hover:bg-gray-100 text-gray-600"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
+            <span>템플릿</span>
           </button>
           <button
             onClick={() => router.push('/reports')}
-            className="w-10 h-10 rounded-lg flex items-center justify-center transition-all hover:bg-gray-100 text-gray-500"
-            title="저장된 보고서"
+            className="flex items-center gap-3 px-3 py-3 rounded-xl transition-all hover:bg-gray-100 text-gray-600"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
             </svg>
+            <span>보고서</span>
           </button>
         </nav>
 
         {/* 사용자 정보 & 로그아웃 */}
         <div className="mt-auto pt-4 border-t border-gray-200">
           {user && (
-            <div className="flex flex-col items-center gap-2">
-              <div
-                className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center text-teal-600 text-xs font-medium"
-                title={user.email || ''}
-              >
-                {user.email?.charAt(0).toUpperCase()}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-3 px-3 py-2">
+                <div className="w-9 h-9 bg-teal-100 rounded-full flex items-center justify-center text-teal-600 font-medium flex-shrink-0">
+                  {user.email?.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {user.email?.split('@')[0]}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {user.email}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={signOut}
-                className="w-10 h-10 rounded-lg flex items-center justify-center transition-all hover:bg-red-50 text-gray-400 hover:text-red-500"
-                title="로그아웃"
+                className="flex items-center gap-3 px-3 py-2 rounded-xl transition-all hover:bg-red-50 text-gray-500 hover:text-red-600"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
+                <span className="text-sm">로그아웃</span>
               </button>
             </div>
           )}

@@ -59,6 +59,13 @@ export default function MappingPreviewPanel({
     setEditingColumn(null);
   };
 
+  // 이미 사용된 데이터 컬럼 목록
+  const usedDataColumns = new Set(
+    mappings
+      .filter(m => m.dataColumn !== null)
+      .map(m => m.dataColumn as string)
+  );
+
   // 컬럼명 줄이기
   const truncateText = (text: string, maxLength: number = 30) => {
     if (text.length <= maxLength) return text;
@@ -195,11 +202,18 @@ export default function MappingPreviewPanel({
                           className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 min-w-[200px]"
                         >
                           <option value="">-- 선택 안함 --</option>
-                          {dataHeaders.map((header) => (
-                            <option key={header} value={header}>
-                              {header}
-                            </option>
-                          ))}
+                          {dataHeaders.map((header) => {
+                            const isUsed = usedDataColumns.has(header) && mapping.dataColumn !== header;
+                            return (
+                              <option
+                                key={header}
+                                value={header}
+                                disabled={isUsed}
+                              >
+                                {header}{isUsed ? ' (이미 사용됨)' : ''}
+                              </option>
+                            );
+                          })}
                         </select>
                       ) : (
                         <button
