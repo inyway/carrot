@@ -9,6 +9,7 @@ import CommandPanel from '@/components/CommandPanel';
 import ResizableDivider from '@/components/ResizableDivider';
 import { useAuth } from '@/components/AuthProvider';
 import CubeLoader from '@/components/CubeLoader';
+import { MappingProfile } from '@/lib/types';
 
 interface UploadedFile {
   id: string;
@@ -53,6 +54,9 @@ export default function Home() {
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
 
+  // 매핑 프로필 관련 (템플릿 선택 시 자동 매칭)
+  const [selectedProfile, setSelectedProfile] = useState<MappingProfile | null>(null);
+
   // 로딩 중 표시
   if (loading) {
     return <CubeLoader />;
@@ -84,6 +88,7 @@ export default function Home() {
     setDataRows(null);
     setSelectedTemplate(null);
     setMappings([]);
+    setSelectedProfile(null);
   };
 
   // 템플릿 등록 모달 열기
@@ -149,13 +154,14 @@ export default function Home() {
         alert('템플릿 등록 중 오류가 발생했습니다.');
       }
     } else {
-      // 데이터 업로드 → 매핑 화면으로 이동
+      // 데이터 업로드 → 바로 매핑 화면으로 이동
       try {
         setDataFile(file);
         const data = await parseDataFile(file.file);
         setDataRows(data);
         setSelectedTemplate(null);
         setMappings([]);
+        setSelectedProfile(null);
         setStep('data-mapping');
       } catch (error) {
         console.error('Data parse error:', error);
@@ -251,11 +257,12 @@ export default function Home() {
   const handleChangeTemplate = () => {
     setSelectedTemplate(null);
     setMappings([]);
+    setSelectedProfile(null);
   };
 
   return (
     <div className="h-screen bg-gray-50 flex overflow-hidden">
-      {/* 사이드바 - 넓고 알아보기 쉽게 */}
+      {/* 사이드바 */}
       <aside className="w-48 bg-white border-r border-gray-200 flex flex-col py-4 px-3 flex-shrink-0">
         {/* 로고 & 앱 이름 */}
         <button
@@ -409,6 +416,7 @@ export default function Home() {
                 dataRows={dataRows.rows}
                 onTemplateSelect={handleTemplateSelect}
                 selectedTemplateId={null}
+                selectedProfile={selectedProfile}
               />
             ) : (
               <MappingPreviewPanel
@@ -433,6 +441,8 @@ export default function Home() {
               onAddData={openDataModal}
               selectedTemplate={selectedTemplate}
               onChangeTemplate={handleChangeTemplate}
+              templateId={selectedTemplate?.id}
+              sourceType={dataFile?.type}
             />
           }
           initialRightWidth={420}

@@ -64,3 +64,39 @@ export interface AnalyzeTemplateResponse {
 
 // 원본 데이터 행
 export type DataRow = Record<string, string | number | boolean | null>;
+
+// ============================================
+// Mapping Profile Types
+// ============================================
+
+export type TransformType = 'none' | 'multiply_100' | 'divide_100' | 'parse_date' | 'parse_number';
+
+export interface FieldMapping {
+  sourceField: string;
+  canonicalKey: string;
+  transform?: TransformType;
+}
+
+export interface MappingProfile {
+  id: string;
+  templateId: string;
+  name: string;
+  sourceType: string;
+  headerHash: string | null;
+  headerCount: number;
+  sampleHeaders: string[] | null;
+  mappings: FieldMapping[];
+  usageCount: number;
+  lastUsedAt: string | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FindMatchingProfileResult {
+  profile: MappingProfile | null;
+  matchType: 'exact' | 'source_type' | 'recent' | 'none';
+  confidence: number;
+  hasMatch: boolean;
+}
+

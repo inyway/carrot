@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { MappingProfile, FieldMapping } from '@/lib/types';
 
 interface Template {
   id: string;
@@ -22,6 +23,7 @@ interface TemplateSelectorPanelProps {
   dataRows: Record<string, string | number | boolean | null>[];
   onTemplateSelect: (template: Template, mappings: ColumnMapping[]) => void;
   selectedTemplateId: string | null;
+  selectedProfile?: MappingProfile | null;
 }
 
 export default function TemplateSelectorPanel({
@@ -30,6 +32,7 @@ export default function TemplateSelectorPanel({
   dataRows,
   onTemplateSelect,
   selectedTemplateId,
+  selectedProfile,
 }: TemplateSelectorPanelProps) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,8 +65,49 @@ export default function TemplateSelectorPanel({
     fetchTemplates();
   }, []);
 
-  // 자동 매핑 생성
+  // 프로필 기반 매핑 생성 (저장된 매핑 적용)
+  const generateMappingsFromProfile = (template: Template, profile: MappingProfile): ColumnMapping[] => {
+    // 프로필의 매핑을 Map으로 변환 (canonicalKey -> sourceField)
+    const profileMappingMap = new Map<string, FieldMapping>();
+    profile.mappings.forEach((m) => {
+      profileMappingMap.set(m.canonicalKey.toLowerCase(), m);
+    });
+
+    return template.columns.map((col) => {
+      const templateCol = col.name;
+      const profileMapping = profileMappingMap.get(templateCol.toLowerCase());
+
+      if (profileMapping) {
+        // 프로필에서 매핑 정보를 찾았고, 해당 소스 필드가 현재 데이터에 있는지 확인
+        const sourceFieldExists = dataHeaders.some(
+          (h) => h.toLowerCase() === profileMapping.sourceField.toLowerCase()
+        );
+
+        if (sourceFieldExists) {
+          // 소스 필드를 정확한 대소문자로 찾기
+          const exactSourceField = dataHeaders.find(
+            (h) => h.toLowerCase() === profileMapping.sourceField.toLowerCase()
+          );
+          return {
+            templateColumn: templateCol,
+            dataColumn: exactSourceField || profileMapping.sourceField,
+            status: 'matched' as const,
+          };
+        }
+      }
+
+      // 프로필에 없거나 소스 필드가 현재 데이터에 없으면 기본 로직 사용
+      return { templateColumn: templateCol, dataColumn: null, status: 'unmatched' as const };
+    });
+  };
+
+  // 자동 매핑 생성 (기본 로직)
   const generateMappings = (template: Template): ColumnMapping[] => {
+    // 프로필이 있으면 프로필 기반 매핑 사용
+    if (selectedProfile && selectedProfile.mappings.length > 0) {
+      return generateMappingsFromProfile(template, selectedProfile);
+    }
+
     // 간단한 매칭 로직 (나중에 LLM으로 개선)
     const similarityMap: Record<string, string[]> = {
       '날짜': ['date', 'dt', '일자', '날짜'],
@@ -115,6 +159,25 @@ export default function TemplateSelectorPanel({
           <span>({dataRows.length}행)</span>
         </div>
       </div>
+
+      {/* 프로필 적용 알림 */}
+      {selectedProfile && (
+        <div className="mx-4 mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <p className="text-sm font-medium text-green-800">
+                저장된 매핑 프로필 적용됨
+              </p>
+              <p className="text-xs text-green-600">
+                {selectedProfile.name} • {selectedProfile.mappings.length}개 매핑
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 템플릿 목록 */}
       <div className="p-4 border-b border-gray-200">

@@ -42,6 +42,8 @@ interface CommandPanelProps {
   onAddData: () => void;
   selectedTemplate: Template | null;
   onChangeTemplate: () => void;
+  templateId?: string;
+  sourceType?: string;
 }
 
 export default function CommandPanel({
@@ -54,6 +56,8 @@ export default function CommandPanel({
   onAddData,
   selectedTemplate,
   onChangeTemplate,
+  templateId,
+  sourceType,
 }: CommandPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -61,6 +65,7 @@ export default function CommandPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [saveConfirmMode, setSaveConfirmMode] = useState(false);
   const [reportName, setReportName] = useState('');
+  const [saveProfileChecked, setSaveProfileChecked] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const unmatchedColumns = mappings.filter(m => m.status === 'unmatched');
@@ -219,6 +224,39 @@ export default function CommandPanel({
     setReportName(selectedTemplate?.name ? `${selectedTemplate.name}_보고서` : '새 보고서');
   };
 
+  // 매핑 프로필 저장
+  const saveMappingProfile = async (profileName: string): Promise<boolean> => {
+    if (!templateId || !selectedTemplate) return false;
+
+    try {
+      const profileMappings = mappings
+        .filter(m => m.dataColumn !== null)
+        .map(m => ({
+          sourceField: m.dataColumn!,
+          canonicalKey: m.templateColumn,
+          confidence: 1.0,
+        }));
+
+      const response = await fetch('/api/mapping-profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          templateId,
+          name: profileName,
+          sourceType: sourceType || 'excel',
+          mappings: profileMappings,
+          headers: dataHeaders,
+        }),
+      });
+
+      const result = await response.json();
+      return result.success;
+    } catch (error) {
+      console.error('Failed to save mapping profile:', error);
+      return false;
+    }
+  };
+
   // 저장 실행
   const handleSave = async () => {
     if (!reportName.trim() || !onSaveMapping) return;
@@ -236,11 +274,17 @@ export default function CommandPanel({
     try {
       const success = await onSaveMapping(reportName.trim());
 
+      // 템플릿이 선택되어 있고 프로필 저장이 체크되어 있으면 프로필도 저장
+      let profileSaved = false;
+      if (success && templateId && saveProfileChecked) {
+        profileSaved = await saveMappingProfile(reportName.trim());
+      }
+
       const resultMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
         content: success
-          ? `✅ **저장 완료**\n\n"${reportName}" 보고서가 저장되었습니다.\n\n저장된 보고서 페이지에서 확인하실 수 있습니다.`
+          ? `✅ **저장 완료**\n\n"${reportName}" 보고서가 저장되었습니다.${profileSaved ? '\n\n📋 매핑 프로필도 저장되어 다음에 같은 형식의 데이터를 불러올 때 자동으로 적용됩니다.' : ''}\n\n저장된 보고서 페이지에서 확인하실 수 있습니다.`
           : `❌ **저장 실패**\n\n보고서 저장 중 오류가 발생했습니다. 다시 시도해주세요.`,
         timestamp: new Date(),
       };
@@ -448,13 +492,28 @@ export default function CommandPanel({
                     placeholder="보고서 이름을 입력하세요"
                     className="flex-1 bg-transparent outline-none text-sm"
                     disabled={isSaving}
-                    onKeyPress={(e) => {
+                    onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         handleSave();
                       }
                     }}
                   />
                 </div>
+                {/* 매핑 프로필 저장 체크박스 (템플릿이 선택된 경우에만 표시) */}
+                {templateId && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={saveProfileChecked}
+                      onChange={(e) => setSaveProfileChecked(e.target.checked)}
+                      className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                      disabled={isSaving}
+                    />
+                    <span className="text-xs text-gray-600">
+                      다음에 같은 형식의 데이터에 자동 적용 (매핑 프로필 저장)
+                    </span>
+                  </label>
+                )}
                 <div className="flex gap-2">
                   <button
                     onClick={cancelSave}
@@ -507,7 +566,7 @@ export default function CommandPanel({
                       type="text"
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
-                      onKeyPress={handleKeyPress}
+                      onKeyDown={handleKeyPress}
                       placeholder="매핑을 어떻게 변경할까요? (예: 자동 매칭해줘)"
                       className="flex-1 bg-transparent outline-none text-sm"
                       disabled={isLoading}

@@ -1,0 +1,206 @@
+// Prisma Schema for Excel Report Formatter
+// Neon PostgreSQL + pgvector
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ============================================
+// 회사 (Company)
+// ============================================
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique // URL용 식별자
+  style     Json?    // 보고서 스타일 설정 (존댓말/반말, 용어 등)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  templates       Template[]
+  cleanReports    CleanReport[]
+
+  @@map("companies")
+}
+
+// ============================================
+// 매핑 프로필 (MappingProfile) - 템플릿별 재사용 가능한 컬럼 매핑
+// ============================================
+model MappingProfile {
+  id          String   @id @default(cuid())
+  templateId  String   // 어떤 템플릿(출력 형식)에 대한 매핑인지
+  name        String   // "ERP 데이터용", "쇼핑몰 주문 데이터용"
+  sourceType  String   @default("excel") // "excel", "csv", "google_ads" 등
+
+  // 헤더 시그니처 (빠른 매칭용)
+  headerHash  String?  // MD5(sorted headers) - 정확한 매칭
+  headerCount Int      @default(0)
+  sampleHeaders Json?  // 샘플 헤더 목록 (미리보기용)
+
+  // 매핑 데이터
+  mappings    Json     // [{ sourceField, canonicalKey, confidence }]
+
+  // 사용 통계
+  usageCount  Int      @default(0)
+  lastUsedAt  DateTime?
+  isDefault   Boolean  @default(false) // 템플릿 기본 매핑 여부
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  template    Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, sourceType])
+  @@index([templateId, headerHash])
+  @@map("mapping_profiles")
+}
+
+// ============================================
+// 템플릿 (Template) - 회사별 엑셀 보고서 양식
+// ============================================
+model Template {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String   // 템플릿 이름 (예: "월간 마케팅 리포트")
+  description String?
+  fileName    String   // 원본 엑셀 파일명
+  fileUrl     String?  // 저장된 파일 URL
+  structure   Json     // 논리적 템플릿 구조 (시트/블록 정보)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sheets          TemplateSheet[]
+  cleanReports    CleanReport[]
+  reports         Report[]
+  mappingProfiles MappingProfile[]
+
+  @@map("templates")
+}
+
+// ============================================
+// 템플릿 시트 (TemplateSheet) - 엑셀 시트 단위
+// ============================================
+model TemplateSheet {
+  id         String   @id @default(cuid())
+  templateId String
+  name       String   // 시트 이름 (예: "Summary", "Campaigns")
+  index      Int      // 시트 순서
+  createdAt  DateTime @default(now())
+
+  template Template        @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  blocks   TemplateBlock[]
+
+  @@map("template_sheets")
+}
+
+// ============================================
+// 템플릿 블록 (TemplateBlock) - 셀 범위 단위
+// ============================================
+model TemplateBlock {
+  id        String    @id @default(cuid())
+  sheetId   String
+  blockId   String    // 블록 식별자 (예: "kpi_block", "summary_text")
+  type      BlockType // 블록 타입
+  range     String    // 셀 범위 (예: "B3:C8")
+  config    Json?     // 블록별 설정 (metrics, dimensions, style 등)
+  createdAt DateTime  @default(now())
+
+  sheet TemplateSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+
+  @@map("template_blocks")
+}
+
+enum BlockType {
+  METRIC_BLOCK  // 숫자/지표 블록
+  TABLE         // 표/리스트 블록
+  TEXT_AI       // LLM이 생성하는 텍스트 블록
+  TEXT_STATIC   // 고정 텍스트
+  CHART         // 차트 영역
+  HEADER        // 헤더 영역
+}
+
+// ============================================
+// 데이터 소스 매핑 (DataSourceMapping)
+// ============================================
+model DataSourceMapping {
+  id         String   @id @default(cuid())
+  templateId String
+  sourceName String   // 데이터 소스 이름 (예: "google_ads", "meta_ads")
+  mappings   Json     // 원본 컬럼 → canonical 필드 매핑
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([templateId, sourceName])
+  @@map("data_source_mappings")
+}
+
+// ============================================
+// 클린 보고서 (CleanReport) - 학습용 완성 보고서
+// ============================================
+model CleanReport {
+  id          String                   @id @default(cuid())
+  companyId   String
+  templateId  String
+  periodStart DateTime
+  periodEnd   DateTime
+  metricsJson Json                     // canonical 데이터
+  finalText   String                   // LLM 학습용 텍스트 (요약/인사이트)
+  embedding   Unsupported("vector(1536)")? // OpenAI embedding 차원
+  fileUrl     String?                  // 클린 엑셀 파일 URL
+  createdAt   DateTime                 @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, templateId])
+  @@map("clean_reports")
+}
+
+// ============================================
+// 생성된 보고서 (Report)
+// ============================================
+model Report {
+  id            String       @id @default(cuid())
+  templateId    String
+  name          String
+  periodStart   DateTime
+  periodEnd     DateTime
+  canonicalData Json         // 정규화된 데이터
+  status        ReportStatus @default(DRAFT)
+  fileUrl       String?      // 생성된 엑셀 파일 URL
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  template Template @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@map("reports")
+}
+
+enum ReportStatus {
+  DRAFT
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+// ============================================
+// Canonical 메트릭 정의 (CanonicalMetric)
+// ============================================
+model CanonicalMetric {
+  id          String   @id @default(cuid())
+  key         String   @unique // 시스템 키 (예: "revenue", "ad_spend", "roas")
+  name        String   // 표시 이름
+  description String?
+  dataType    String   @default("number") // number, percentage, currency
+  format      String?  // 포맷 패턴
+  createdAt   DateTime @default(now())
+
+  @@map("canonical_metrics")
+}

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ExcelFormatterModule } from './contexts/excel-formatter';
+import { PrismaModule } from './common/database';
 
 @Module({
   imports: [
@@ -10,6 +11,7 @@ import { ExcelFormatterModule } from './contexts/excel-formatter';
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
+    PrismaModule,
     ExcelFormatterModule,
   ],
   controllers: [AppController],
