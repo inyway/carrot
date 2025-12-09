@@ -547,6 +547,7 @@ export class HwpxGeneratorService {
   /**
    * 스마트 헤더 감지를 사용하여 Excel 데이터 추출
    * 메모리 최적화: eachRow 사용하여 스트리밍 방식으로 처리
+   * 다중 레벨 헤더 지원: 그룹 헤더(예: 2분기) + 필드명(예: 취업여부) = 2분기_취업여부
    */
   private async extractSmartSheetData(
     buffer: Buffer,
@@ -561,6 +562,22 @@ export class HwpxGeneratorService {
       throw new Error(`Sheet "${sheetName}" not found`);
     }
 
+    // 셀 값 추출 헬퍼 함수
+    const getCellText = (cell: { value?: unknown }): string => {
+      const value = cell?.value;
+      if (value === null || value === undefined) return '';
+
+      const valueObj = value as unknown;
+      if (typeof valueObj === 'object' && valueObj !== null && 'richText' in (valueObj as object)) {
+        const richTextVal = valueObj as { richText: Array<{ text: string }> };
+        return (richTextVal.richText || []).map((t) => t.text).join('').trim();
+      } else if (typeof valueObj === 'object' && valueObj !== null && 'result' in (valueObj as object)) {
+        const resultVal = valueObj as { result: unknown };
+        return String(resultVal.result).trim();
+      }
+      return String(value).trim();
+    };
+
     // 스마트 헤더 행 찾기
     const { headerRowNum, columns } = await this.findSmartHeaderRow(worksheet);
     console.log('[SmartSheetData] Header row:', headerRowNum, 'Columns:', columns.length);
@@ -570,34 +587,79 @@ export class HwpxGeneratorService {
       return this.excelParser.extractSheetData(buffer, sheetName);
     }
 
-    // 헤더 행의 컬럼 인덱스 매핑 생성 (배열로 변환하여 메모리 최적화)
+    // 그룹 헤더 행 (헤더 행 바로 위) 읽기
+    const groupHeaderRowNum = headerRowNum - 1;
+    const groupHeaders: string[] = [];
+
+    if (groupHeaderRowNum >= 1) {
+      const groupRow = worksheet.getRow(groupHeaderRowNum);
+      groupRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        groupHeaders[colNumber - 1] = getCellText(cell);
+      });
+      console.log('[SmartSheetData] Group header row:', groupHeaderRowNum);
+    }
+
+    // 헤더 행의 컬럼 인덱스 매핑 생성 (다중 레벨 헤더 지원)
     const headerRow = worksheet.getRow(headerRowNum);
     const columnIndexToName: Array<{ colIndex: number; name: string }> = [];
 
-    headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-      const value = cell.value;
-      let text = '';
+    // 먼저 중복 필드명 카운트
+    const fieldNameCount = new Map<string, number>();
+    const headerValues: string[] = [];
 
-      if (value !== null && value !== undefined) {
-        const valueObj = value as unknown;
-        if (typeof valueObj === 'object' && valueObj !== null && 'richText' in (valueObj as object)) {
-          const richTextVal = valueObj as { richText: Array<{ text: string }> };
-          text = (richTextVal.richText || []).map((t) => t.text).join('');
-        } else if (typeof valueObj === 'object' && valueObj !== null && 'result' in (valueObj as object)) {
-          const resultVal = valueObj as { result: unknown };
-          text = String(resultVal.result);
-        } else {
-          text = String(value);
-        }
-      }
-
-      const trimmed = text.trim();
+    headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const trimmed = getCellText(cell);
+      headerValues[colNumber - 1] = trimmed;
       if (trimmed.length > 0 && trimmed !== 'undefined') {
-        columnIndexToName.push({ colIndex: colNumber, name: trimmed });
+        fieldNameCount.set(trimmed, (fieldNameCount.get(trimmed) || 0) + 1);
       }
     });
 
+    // 분기 관련 그룹 헤더 패턴
+    const quarterPattern = /^[1-4]분기$/;
+    const seenNames = new Set<string>();
+
+    headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      const value = getCellText(cell);
+      if (value.length === 0 || value === 'undefined') {
+        return;
+      }
+
+      let finalName = value;
+      const count = fieldNameCount.get(value) || 1;
+      const groupHeader = groupHeaders[colNumber - 1] || '';
+
+      // 중복 필드명이고 그룹 헤더가 있으면 조합
+      if (count > 1 && groupHeader) {
+        // 그룹 헤더가 분기 패턴이면 "N분기_필드명" 형태로 조합
+        if (quarterPattern.test(groupHeader)) {
+          finalName = `${groupHeader}_${value}`;
+          console.log(`[SmartSheetData] Combined column: "${groupHeader}" + "${value}" = "${finalName}"`);
+        }
+        // 그룹 헤더가 섹션 제목이 아니고 필드명과 다르면 조합
+        else if (!/^\d+\./.test(groupHeader) && groupHeader !== value) {
+          finalName = `${groupHeader}_${value}`;
+          console.log(`[SmartSheetData] Combined column: "${groupHeader}" + "${value}" = "${finalName}"`);
+        }
+      }
+
+      // 여전히 중복이면 인덱스 추가
+      if (seenNames.has(finalName)) {
+        const suffix = colNumber;
+        finalName = `${finalName}_${suffix}`;
+      }
+
+      seenNames.add(finalName);
+      columnIndexToName.push({ colIndex: colNumber, name: finalName });
+    });
+
     console.log('[SmartSheetData] Column count:', columnIndexToName.length);
+
+    // 취업현황 관련 컬럼 디버깅
+    const employmentCols = columnIndexToName.filter(c => c.name.includes('취업') || c.name.includes('분기'));
+    if (employmentCols.length > 0) {
+      console.log('[SmartSheetData] Employment related columns:', employmentCols.map(c => c.name));
+    }
 
     // 데이터 추출 - eachRow 사용하여 메모리 효율적으로 처리
     const data: Array<Record<string, unknown>> = [];
@@ -631,9 +693,15 @@ export class HwpxGeneratorService {
     console.log('[SmartSheetData] Extracted rows:', data.length);
     if (data.length > 0) {
       console.log('[SmartSheetData] First row sample:', Object.keys(data[0]).slice(0, 5));
-      // 처음 5개 행의 성명 확인
+      // 처음 5개 행의 성명 및 취업현황 확인
       for (let i = 0; i < Math.min(5, data.length); i++) {
-        console.log(`[SmartSheetData] Row ${i} 성명: "${data[i]['성명']}", 생년월일: "${data[i]['생년월일']}"`);
+        const row = data[i];
+        console.log(`[SmartSheetData] Row ${i} 성명: "${row['성명']}", 생년월일: "${row['생년월일']}"`);
+        // 취업현황 데이터 확인
+        const quarterFields = Object.keys(row).filter(k => k.includes('분기'));
+        if (quarterFields.length > 0) {
+          console.log(`[SmartSheetData] Row ${i} 취업현황:`, quarterFields.map(k => `${k}="${row[k]}"`).join(', '));
+        }
       }
     }
 

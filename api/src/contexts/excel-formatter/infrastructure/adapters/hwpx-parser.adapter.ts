@@ -34,6 +34,20 @@ export class HwpxParserAdapter {
   private readonly xmlParser: XMLParser;
   private readonly xmlBuilder: XMLBuilder;
 
+  /**
+   * XML 특수 문자 이스케이프
+   * &, <, >, ", ' 를 XML 엔티티로 변환
+   */
+  private escapeXml(text: string): string {
+    if (!text) return text;
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
   constructor() {
     this.xmlParser = new XMLParser({
       ignoreAttributes: false,
@@ -335,6 +349,9 @@ export class HwpxParserAdapter {
         if (rowAddr === targetRow && colAddr === targetCol) {
           replacedCount++;
 
+          // XML 특수 문자 이스케이프 적용
+          const escapedText = this.escapeXml(newText);
+
           // hp:t 태그의 내용을 교체 - 첫 번째 hp:t만 교체
           let replaced = false;
           const newContent = tcMatch.replace(
@@ -342,7 +359,7 @@ export class HwpxParserAdapter {
             (tMatch: string, openTag: string, closeTag: string) => {
               if (!replaced) {
                 replaced = true;
-                return `${openTag}${newText}${closeTag}`;
+                return `${openTag}${escapedText}${closeTag}`;
               }
               return tMatch;
             },
@@ -404,10 +421,16 @@ export class HwpxParserAdapter {
       const rowTemplateBuffer = Buffer.from(templateBytes);
       const hwpxBuffer = await this.fillTemplate(rowTemplateBuffer, row, mappings);
 
-      // 파일명 결정 (이름 컬럼 사용 또는 순번)
+      // 파일명 결정 (이름 컬럼 사용 또는 성명 컬럼 또는 순번)
       let fileName = `output_${i + 1}.hwpx`;
+      // 1. fileNameColumn이 지정된 경우
       if (fileNameColumn && row[fileNameColumn]) {
         const safeName = row[fileNameColumn].replace(/[/\\?%*:|"<>]/g, '_');
+        fileName = `${safeName}.hwpx`;
+      }
+      // 2. 기본적으로 '성명' 컬럼 사용
+      else if (row['성명']) {
+        const safeName = row['성명'].replace(/[/\\?%*:|"<>]/g, '_');
         fileName = `${safeName}.hwpx`;
       }
 
