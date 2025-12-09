@@ -117,12 +117,17 @@ export class HwpxGeneratorService {
       console.log('[HwpxGeneratorService] First row keys:', Object.keys(excelData[0]).slice(0, 10));
     }
 
-    // Record<string, unknown>을 Record<string, string>으로 변환
+    // Record<string, unknown>을 Record<string, string>으로 변환 + 머지 매핑 적용
     const stringData = excelData.map((row) => {
       const stringRow: Record<string, string> = {};
       for (const [key, value] of Object.entries(row)) {
         stringRow[key] = this.convertToString(value);
       }
+
+      // 머지 매핑 규칙 적용: 두 컬럼을 합쳐서 새 컬럼 생성
+      // "전문가 강연" + "해외 경력자 멘토링" → "핵심 세미나"
+      this.applyMergeMappings(stringRow);
+
       return stringRow;
     });
 
@@ -706,6 +711,54 @@ export class HwpxGeneratorService {
     }
 
     return data;
+  }
+
+  /**
+   * 머지 매핑 규칙 적용
+   * 여러 Excel 컬럼을 하나로 합쳐서 HWPX 필드에 매핑할 때 사용
+   * 예: "전문가 강연" + "해외 경력자 멘토링" → "핵심 세미나"
+   */
+  private applyMergeMappings(row: Record<string, string>): void {
+    // 머지 매핑 규칙 정의 (나중에 context injection으로 확장 가능)
+    const mergeRules = [
+      {
+        targetColumn: '핵심 세미나',
+        sourceColumns: ['전문가 강연', '해외 경력자 멘토링'],
+        separator: ' / ',
+      },
+    ];
+
+    for (const rule of mergeRules) {
+      const values: string[] = [];
+
+      for (const sourceCol of rule.sourceColumns) {
+        // 정확한 컬럼명으로 찾기
+        let value = row[sourceCol];
+
+        // 정확히 매칭되지 않으면 유사 컬럼명 검색
+        if (!value) {
+          const normalizedSource = sourceCol.replace(/\s+/g, '');
+          for (const [key, val] of Object.entries(row)) {
+            const normalizedKey = key.replace(/\s+/g, '');
+            if (normalizedKey.includes(normalizedSource) || normalizedSource.includes(normalizedKey)) {
+              value = val;
+              break;
+            }
+          }
+        }
+
+        if (value && value.trim()) {
+          values.push(value.trim());
+        }
+      }
+
+      // 값이 하나라도 있으면 머지된 값 생성
+      if (values.length > 0) {
+        const mergedValue = values.join(rule.separator);
+        row[rule.targetColumn] = mergedValue;
+        console.log(`[MergeMapping] Created "${rule.targetColumn}" = "${mergedValue}" from ${rule.sourceColumns.join(', ')}`);
+      }
+    }
   }
 
   /**
