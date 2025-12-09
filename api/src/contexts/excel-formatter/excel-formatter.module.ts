@@ -8,6 +8,7 @@ import {
   RagController,
   MappingProfileController,
   CompanyController,
+  HwpxController,
 } from './interface/http/controllers';
 import {
   MappingService,
@@ -16,6 +17,8 @@ import {
   ReportGeneratorService,
   RagService,
   MappingProfileService,
+  HwpxGeneratorService,
+  HwpxMappingGraphService,
 } from './application/services';
 import {
   GeminiAiMappingAdapter,
@@ -24,6 +27,7 @@ import {
   OpenAiEmbeddingAdapter,
   PrismaCleanReportAdapter,
   PrismaMappingProfileAdapter,
+  HwpxParserAdapter,
 } from './infrastructure/adapters';
 import {
   AI_MAPPING_PORT,
@@ -44,6 +48,7 @@ import {
     RagController,
     MappingProfileController,
     CompanyController,
+    HwpxController,
   ],
   providers: [
     MappingService,
@@ -52,6 +57,10 @@ import {
     ReportGeneratorService,
     RagService,
     MappingProfileService,
+    HwpxGeneratorService,
+    HwpxMappingGraphService,
+    HwpxParserAdapter,
+    GeminiAiMappingAdapter,
     {
       provide: AI_MAPPING_PORT,
       useClass: GeminiAiMappingAdapter,
@@ -84,6 +93,7 @@ import {
     ReportGeneratorService,
     RagService,
     MappingProfileService,
+    HwpxGeneratorService,
   ],
 })
 export class ExcelFormatterModule {}

@@ -5,3 +5,4 @@ export * from './report-generator.controller';
 export * from './rag.controller';
 export * from '../mapping-profile.controller';
 export * from '../company.controller';
+export * from './hwpx.controller';
