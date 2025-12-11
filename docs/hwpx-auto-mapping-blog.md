@@ -739,9 +739,355 @@ Output                 GenerateResult
 
 ---
 
+## Agent 기반 아키텍처로의 진화
+
+### 새로운 문제: 복잡한 다중 헤더 Excel
+
+기존 시스템은 단순한 헤더 구조(1행 헤더)를 가정했습니다. 하지만 실무에서는 훨씬 복잡한 구조가 등장했습니다:
+
+```
+쿠팡 출결 Excel 구조:
+
+Row 1-8:  메타 정보 (Class Name, Book Name, Teacher Name 등)
+Row 9:    월 헤더       | 8월    | 8월    | 8월    | 9월    | 9월    |
+Row 10:   회차 헤더     | 1회차  | 2회차  | 3회차  | 1회차  | 2회차  |
+Row 11:   날짜 헤더     | 04(Mo) | 06(We) | 08(Fr) | 01(Mo) | 03(We) |
+Row 12+:  데이터
+```
+
+```
+리턴업 Excel 구조:
+
+Row 1:    대분류        | 4. 프로그램 참여현황  | 4. 프로그램 참여현황  | ...
+Row 2:    중분류        | 전문가 강연          | 전문가 강연          | 전문가 컨설팅 | ...
+Row 3:    소분류 + 기본 | No. | 성명 | 1회 | 2회 | 3회 | 1회 | 2회 | ...
+Row 4+:   데이터
+```
+
+**핵심 문제**: "1회", "2회" 같은 컬럼명이 **여러 프로그램에서 중복**되어 어떤 프로그램인지 구분이 안됨!
+
+### 기존 방식의 한계
+
+기존 `findSmartHeaderRow` 함수는 **단일 헤더 행**만 찾았습니다:
+
+```typescript
+// 기존: 가장 높은 점수의 단일 행만 선택
+const headerRow = scores.sort((a, b) => b.score - a.score)[0];
+```
+
+결과적으로:
+- Row 3만 헤더로 인식
+- 컬럼명: `"1회"`, `"2회"`, `"3회"` (프로그램 구분 없음)
+- AI 매핑 시 "전문가 컨설팅 1회"와 "실전모의면접 1회"를 구분 불가
+
+### 해결: HeaderDetectionAgent 도입
+
+**Agent 패턴**을 적용하여 복잡한 헤더 구조를 자율적으로 분석하는 전문 Agent를 구현했습니다:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       HeaderDetectionAgent                               │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ Step 1: detectMetaRows()                                          │ │
+│  │   "Class Name : xxx", "Book Name : xxx" 패턴 감지                 │ │
+│  │   → metaRows: [1, 2, 3, 4, 5, 6, 7, 8]                           │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                              │                                          │
+│                              ▼                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ Step 2: detectHeaderRows()                                        │ │
+│  │   점수 기반 메인 헤더 찾기 + 위/아래 추가 헤더 감지               │ │
+│  │   → headerRows: [1, 2, 3] (다중 행!)                              │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                              │                                          │
+│                              ▼                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ Step 3: extractMergeInfo()                                        │ │
+│  │   병합 셀 정보 추출 (어떤 셀이 어디까지 병합되었는지)               │ │
+│  │   → merges: [{startCol:17, endCol:22, text:"전문가 강연"}, ...]   │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                              │                                          │
+│                              ▼                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ Step 4: generateHierarchicalColumns()                             │ │
+│  │   다중 헤더 행 값을 계층적으로 조합                                │ │
+│  │   Row1 + Row2 + Row3 → "4. 프로그램 참여현황_전문가 강연_1회"     │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                              │                                          │
+│                              ▼                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ Output: HeaderAnalysisResult                                       │ │
+│  │   headerRows: [1, 2, 3]                                           │ │
+│  │   dataStartRow: 4                                                 │ │
+│  │   columns: [                                                      │ │
+│  │     { name: "No.", colIndex: 2 },                                 │ │
+│  │     { name: "성명", colIndex: 3 },                                │ │
+│  │     { name: "4. 프로그램 참여현황_전문가 강연_1회", colIndex: 17 },│ │
+│  │     { name: "4. 프로그램 참여현황_전문가 강연_2회", colIndex: 18 },│ │
+│  │     { name: "4. 프로그램 참여현황_전문가 컨설팅_1회", colIndex: 29},│ │
+│  │     ...                                                           │ │
+│  │   ]                                                               │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 계층적 컬럼명 생성 알고리즘
+
+핵심은 **각 컬럼별로 모든 헤더 행의 값을 수집하고 조합**하는 것입니다:
+
+```typescript
+private generateHierarchicalColumns(
+  worksheet: ExcelJS.Worksheet,
+  headerRows: number[],
+  merges: MergeInfo[]
+): HierarchicalColumn[] {
+  // 각 컬럼별로 행 순서대로 값 수집
+  const columnValuesPerRow = new Map<number, Map<number, string>>();
+
+  for (const rowNum of headerRows) {
+    const row = worksheet.getRow(rowNum);
+    row.eachCell((cell, colNumber) => {
+      const text = this.getCellText(cell).trim();
+      if (!columnValuesPerRow.has(colNumber)) {
+        columnValuesPerRow.set(colNumber, new Map());
+      }
+      columnValuesPerRow.get(colNumber)!.set(rowNum, text);
+    });
+  }
+
+  // 병합 셀 처리: 병합 범위 내 모든 컬럼에 값 전파
+  for (const merge of merges) {
+    for (let col = merge.startCol; col <= merge.endCol; col++) {
+      const colMap = columnValuesPerRow.get(col);
+      if (colMap && !colMap.has(merge.startRow)) {
+        colMap.set(merge.startRow, merge.text);
+      }
+    }
+  }
+
+  // 계층적 이름 조합
+  for (const [colNumber, rowValues] of columnValuesPerRow) {
+    const sortedRows = Array.from(rowValues.keys()).sort();
+    const orderedValues = sortedRows.map(r => rowValues.get(r)!);
+
+    // 기본 컬럼 (No., 성명 등)은 단일 값 사용
+    if (this.isBasicColumn(orderedValues)) {
+      finalName = orderedValues[orderedValues.length - 1];
+    } else {
+      // 다중 헤더: 계층 조합
+      // ["4. 프로그램 참여현황", "전문가 강연", "1회"]
+      // → "4. 프로그램 참여현황_전문가 강연_1회"
+      finalName = orderedValues.filter(v => !this.isFiltered(v)).join('_');
+    }
+  }
+}
+```
+
+### 결과 비교
+
+| 이전 | Agent 적용 후 |
+|------|--------------|
+| `1회` | `4. 프로그램 참여현황_전문가 강연_1회` |
+| `2회` | `4. 프로그램 참여현황_전문가 강연_2회` |
+| `1회` (중복!) | `4. 프로그램 참여현황_전문가 컨설팅_1회` |
+| `1회` (중복!) | `4. 프로그램 참여현황_실전모의면접_1회` |
+
+**51개 컬럼 모두 고유한 이름으로 구분됨!**
+
+---
+
+## OrchestratorAgent: 다중 Agent 협업
+
+복잡한 문서 변환 작업을 여러 전문 Agent가 협업하여 처리합니다:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        OrchestratorAgent                                 │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ Agent Registry                                                   │   │
+│  │                                                                  │   │
+│  │   HeaderDetectionAgent ─── Excel 헤더 구조 분석 전문가           │   │
+│  │   RuleBasedMappingNode ─── 규칙 기반 매핑 (기존)                 │   │
+│  │   AiTemplateMappingNode ── AI 템플릿 분석 (기존)                 │   │
+│  │   AiExcelMappingNode ───── AI Excel 시맨틱 매칭 (기존)           │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ Orchestration Flow                                               │   │
+│  │                                                                  │   │
+│  │   1. HeaderDetectionAgent.analyze(excelBuffer)                   │   │
+│  │      └─→ { headerRows, dataStartRow, columns }                   │   │
+│  │                                                                  │   │
+│  │   2. Promise.allSettled([                                        │   │
+│  │        runRuleBasedMapping(columns),                             │   │
+│  │        runAiTemplateAnalysis(hwpxTable),                         │   │
+│  │        runAiExcelAnalysis(columns, hwpxLabels)                   │   │
+│  │      ])                                                          │   │
+│  │      └─→ 병렬 실행, 실패해도 계속 진행                            │   │
+│  │                                                                  │   │
+│  │   3. mergeMappings(allCandidates)                                │   │
+│  │      └─→ 투표 기반 최종 매핑 결정                                 │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Agent vs Node의 차이
+
+| LangGraph Node | Agent |
+|----------------|-------|
+| 단일 작업 수행 | 자율적 판단 + 작업 수행 |
+| 고정된 입출력 | 상황에 따라 다른 전략 선택 |
+| 수동 연결 | 스스로 필요한 정보 요청 |
+
+HeaderDetectionAgent는 단순히 "헤더 행 번호를 반환"하는 것이 아니라:
+- 메타 행 패턴 자동 감지
+- 다중 헤더 구조 판단
+- 병합 셀 처리 전략 결정
+- 계층적 이름 생성 규칙 적용
+
+---
+
+## 실제 적용 결과: 리턴업 데이터 일괄 생성
+
+### 테스트 환경
+- **템플릿**: 개인이력카드.hwpx (28행 × 16열 표)
+- **데이터**: 리턴업 명단.xlsx (383명, 51개 컬럼, 3행 다중 헤더)
+
+### 생성 과정
+
+```
+1. HeaderDetectionAgent 분석
+   - headerRows: [1, 2, 3]
+   - dataStartRow: 4
+   - columns: 51개 (계층적 이름)
+
+2. AI 자동 매핑 (38개 필드 매핑)
+   - 성명 → Row 3, Col 1
+   - 연락처 → Row 4, Col 1
+   - 4. 프로그램 참여현황_전문가 강연_1회 → Row 19, Col 0
+   - 4. 프로그램 참여현황_전문가 컨설팅_1회 → Row 14, Col 2
+   - ...
+
+3. HWPX 일괄 생성
+   - 383개 파일 생성 (fallback 제외)
+   - 파일명: 한글 이름 기반 (강나희.hwpx, 김동환.hwpx, ...)
+```
+
+### 생성된 파일 검증
+
+```
+📄 강나희.hwpx
+----------------------------------------
+개인이력카드
+1. 신상정보
+성  명: 강나희
+생년월일: 2000-08-30
+성  별: 여성
+연락처: 01092316315
+이메일: 0830kknn@gmail.com
+2. 해외취업(경험)
+참여분야: 공단사업
+수행기관: (주)리얼스톤
+사업명: [우수과정]미국취업 e-Biz 실무자 양성과정 9기
+국가: 미국
+...
+```
+
+### 성능 지표
+
+| 지표 | 결과 |
+|-----|------|
+| 총 파일 생성 | 383개 |
+| 매핑 필드 | 38개 |
+| 생성 시간 | ~45초 |
+| ZIP 크기 | 22.55 MB |
+| 데이터 정확도 | 100% |
+
+---
+
+## Agent 아키텍처의 장점
+
+### 1. 확장성
+
+새로운 Excel 형식이 등장해도 기존 Agent를 수정하지 않고 새 Agent 추가 가능:
+
+```typescript
+// 미래: 새로운 형식 지원
+orchestrator.registerAgent('pdf', new PdfTemplateAgent());
+orchestrator.registerAgent('docx', new DocxTemplateAgent());
+```
+
+### 2. 독립적 테스트
+
+각 Agent를 독립적으로 테스트하고 개선 가능:
+
+```typescript
+// HeaderDetectionAgent 단독 테스트
+const result = await headerAgent.analyze(excelBuffer);
+expect(result.columns).toContain('4. 프로그램 참여현황_전문가 강연_1회');
+```
+
+### 3. 장애 격리
+
+한 Agent가 실패해도 다른 Agent의 결과로 보완:
+
+```typescript
+const results = await Promise.allSettled([
+  ruleBasedAgent.run(),    // 성공: 27개
+  aiTemplateAgent.run(),   // 실패: API 타임아웃
+  aiExcelAgent.run()       // 성공: 13개
+]);
+// → 40개 매핑으로 계속 진행 (AI 템플릿 없이도 동작)
+```
+
+### 4. 점진적 개선
+
+Agent별로 독립적인 버전 관리 및 A/B 테스트 가능:
+
+```typescript
+// v1: 단순 헤더 감지
+// v2: 다중 헤더 지원 (현재)
+// v3: AI 기반 헤더 추론 (계획)
+const headerAgent = new HeaderDetectionAgentV2();
+```
+
+---
+
+## 결론: Graph에서 Agent로
+
+| 단계 | 접근 방식 | 문제 해결 |
+|-----|---------|----------|
+| 1차 | 단순 파싱 | 비표준 Excel 구조 실패 |
+| 2차 | 스마트 휴리스틱 | 단일 헤더만 처리 |
+| 3차 | 문자열 매칭 | 의미적 유사성 무시 |
+| 4차 | **LangGraph 스타일** | 병렬 전략 + 투표 |
+| **5차** | **Agent 기반** | **다중 헤더 + 자율적 판단** |
+
+**핵심 교훈**:
+1. **실제 데이터는 예상보다 복잡**하다 (다중 헤더, 병합 셀, 메타 행)
+2. **단일 알고리즘보다 전문 Agent 협업**이 효과적이다
+3. **Agent는 단순 함수가 아니라 자율적 판단 능력**을 가진다
+4. **점진적 진화**가 가능한 아키텍처가 중요하다
+
+---
+
+## 기술 스택 (최종)
+
+- **Backend**: NestJS + TypeScript
+- **Excel 파싱**: ExcelJS
+- **HWPX 처리**: adm-zip + fast-xml-parser
+- **AI**: Google Gemini API (gemini-2.0-flash)
+- **아키텍처**: DDD + Clean Architecture + **Agent Pattern**
+- **패턴**: LangGraph 스타일 → **Multi-Agent Orchestration**
+
+---
+
 ## 참고 자료
 
 - [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
 - [ExcelJS GitHub](https://github.com/exceljs/exceljs)
 - [HWPX 파일 형식 분석](https://www.hancom.com/)
 - [Gemini API Documentation](https://ai.google.dev/docs)
+- [Multi-Agent Systems](https://en.wikipedia.org/wiki/Multi-agent_system)
