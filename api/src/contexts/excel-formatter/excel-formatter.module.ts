@@ -9,6 +9,7 @@ import {
   MappingProfileController,
   CompanyController,
   HwpxController,
+  UnifiedGenerateController,
 } from './interface/http/controllers';
 import {
   MappingService,
@@ -19,7 +20,9 @@ import {
   MappingProfileService,
   HwpxGeneratorService,
   HwpxMappingGraphService,
+  UnifiedGeneratorService,
 } from './application/services';
+import { HeaderDetectionAgent, OrchestratorAgent } from './application/agents';
 import {
   GeminiAiMappingAdapter,
   ExceljsParserAdapter,
@@ -49,6 +52,7 @@ import {
     MappingProfileController,
     CompanyController,
     HwpxController,
+    UnifiedGenerateController,
   ],
   providers: [
     MappingService,
@@ -59,8 +63,11 @@ import {
     MappingProfileService,
     HwpxGeneratorService,
     HwpxMappingGraphService,
+    UnifiedGeneratorService,
     HwpxParserAdapter,
     GeminiAiMappingAdapter,
+    HeaderDetectionAgent,
+    OrchestratorAgent,
     {
       provide: AI_MAPPING_PORT,
       useClass: GeminiAiMappingAdapter,

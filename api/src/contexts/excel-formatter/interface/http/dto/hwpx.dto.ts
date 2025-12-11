@@ -37,6 +37,22 @@ export class HwpxGenerateRequestDto {
   @IsOptional()
   @IsString()
   fileNameColumn?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    // FormData로 전송 시 JSON 문자열로 오므로 파싱
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  })
+  @ValidateNested()
+  @Type(() => MappingContextDto)
+  mappingContext?: MappingContextDto;
 }
 
 export class HwpxCellInfoDto {
@@ -65,9 +81,23 @@ export class HwpxAnalyzeResponseDto {
   suggestedMappings: CellMappingDto[];
 }
 
+export class HierarchicalColumnDto {
+  name: string;
+  colIndex: number;
+  depth: number;
+}
+
+export class HeaderAnalysisDto {
+  headerRows: number[];
+  dataStartRow: number;
+  metaInfo?: Record<string, string>;
+}
+
 export class ExcelColumnsResponseDto {
   sheets: string[];
   columns: string[];
+  hierarchicalColumns?: HierarchicalColumnDto[];
+  headerAnalysis?: HeaderAnalysisDto;
 }
 
 // 매핑 검증 결과

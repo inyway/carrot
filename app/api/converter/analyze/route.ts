@@ -21,12 +21,16 @@ async function findSmartHeaderRow(
 ): Promise<{ headerRowNum: number; columns: string[] }> {
   const rows: Array<{ rowNum: number; values: string[]; score: number }> = [];
 
-  for (let rowNum = 1; rowNum <= 10; rowNum++) {
+  // 최대 15행까지 검사 (메타 정보가 많은 파일 대응)
+  for (let rowNum = 1; rowNum <= 15; rowNum++) {
     const row = worksheet.getRow(rowNum);
     const values: string[] = [];
     let nonEmptyCount = 0;
     let hasShortLabels = 0;
     let hasSectionMarkers = 0;
+    let hasMetaPattern = 0; // "Key : Value" 패턴
+    let hasNumberColumn = 0; // No., 번호 등
+    let hasNameColumn = 0; // 이름, 성명, 한글이름 등
 
     row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
       const value = cell.value;
@@ -55,10 +59,27 @@ async function findSmartHeaderRow(
         if (/^\d+\./.test(trimmed)) {
           hasSectionMarkers++;
         }
+        // 메타 정보 패턴 감지 (예: "Class Name : xxx")
+        if (/^[A-Za-z\s]+\s*:\s*.+/.test(trimmed) || /^.+\s*:\s*.+/.test(trimmed)) {
+          hasMetaPattern++;
+        }
+        // 번호 컬럼 감지
+        if (/^(No\.?|번호|순번)$/i.test(trimmed)) {
+          hasNumberColumn++;
+        }
+        // 이름 컬럼 감지
+        if (/^(이름|성명|한글이름|영문이름|Name)$/i.test(trimmed)) {
+          hasNameColumn++;
+        }
       }
     });
 
-    const score = nonEmptyCount * 2 + hasShortLabels * 3 - hasSectionMarkers * 10;
+    // 점수 계산 개선:
+    // - 많은 셀 수 + 짧은 라벨 = 헤더 가능성 높음
+    // - 메타 패턴 (Key: Value) = 헤더 가능성 낮음
+    // - No./이름 컬럼 존재 = 헤더 가능성 매우 높음
+    let score = nonEmptyCount * 2 + hasShortLabels * 3 - hasSectionMarkers * 10 - hasMetaPattern * 15;
+    score += hasNumberColumn * 20 + hasNameColumn * 20;
 
     if (nonEmptyCount >= 3) {
       rows.push({ rowNum, values, score });

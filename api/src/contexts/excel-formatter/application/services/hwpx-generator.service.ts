@@ -6,6 +6,7 @@ import {
 } from '../../infrastructure/adapters/hwpx-parser.adapter';
 import { HwpxMappingGraphService, type MappingContext } from './hwpx-mapping-graph.service';
 import { EXCEL_PARSER_PORT, type ExcelParserPort } from '../ports';
+import { HeaderDetectionAgent, type HeaderAnalysisResult, type HierarchicalColumn } from '../agents';
 
 export interface HwpxGenerateOptions {
   templateBuffer: Buffer;
@@ -13,6 +14,7 @@ export interface HwpxGenerateOptions {
   sheetName: string;
   mappings: CellMapping[];
   fileNameColumn?: string;
+  mappingContext?: MappingContext;
 }
 
 export interface HwpxAnalyzeResult {
@@ -66,11 +68,18 @@ export interface MappingValidationResult {
   suggestions: CellMapping[];
 }
 
+export interface ExcelColumnsResult {
+  columns: string[];
+  hierarchicalColumns: HierarchicalColumn[];
+  headerAnalysis: HeaderAnalysisResult;
+}
+
 @Injectable()
 export class HwpxGeneratorService {
   constructor(
     private readonly hwpxParser: HwpxParserAdapter,
     private readonly mappingGraphService: HwpxMappingGraphService,
+    private readonly headerDetectionAgent: HeaderDetectionAgent,
     @Inject(EXCEL_PARSER_PORT)
     private readonly excelParser: ExcelParserPort,
   ) {}
@@ -102,7 +111,7 @@ export class HwpxGeneratorService {
    * Excel 데이터로 HWPX 일괄 생성
    */
   async generateBulk(options: HwpxGenerateOptions): Promise<Buffer> {
-    const { templateBuffer, dataBuffer, sheetName, mappings, fileNameColumn } = options;
+    const { templateBuffer, dataBuffer, sheetName, mappings, fileNameColumn, mappingContext } = options;
 
     // HWPX 유효성 검사
     if (!this.hwpxParser.isValidHwpx(templateBuffer)) {
@@ -125,8 +134,8 @@ export class HwpxGeneratorService {
       }
 
       // 머지 매핑 규칙 적용: 두 컬럼을 합쳐서 새 컬럼 생성
-      // "전문가 강연" + "해외 경력자 멘토링" → "핵심 세미나"
-      this.applyMergeMappings(stringRow);
+      // mappingContext가 있으면 동적으로, 없으면 기본 규칙 사용
+      this.applyMergeMappings(stringRow, mappingContext?.fieldRelations);
 
       return stringRow;
     });
@@ -166,9 +175,38 @@ export class HwpxGeneratorService {
    * Excel 컬럼 목록 조회 (스마트 헤더 감지 사용)
    */
   async getExcelColumns(dataBuffer: Buffer, sheetName: string): Promise<string[]> {
-    const columns = await this.extractSmartColumns(dataBuffer, sheetName);
-    console.log('[HwpxGeneratorService] Smart columns:', columns.length, columns.slice(0, 10));
-    return columns;
+    const result = await this.getExcelColumnsWithAnalysis(dataBuffer, sheetName);
+    return result.columns;
+  }
+
+  /**
+   * Excel 컬럼 상세 분석 (HeaderDetectionAgent 사용)
+   */
+  async getExcelColumnsWithAnalysis(
+    dataBuffer: Buffer,
+    sheetName: string,
+  ): Promise<ExcelColumnsResult> {
+    console.log('[HwpxGeneratorService] Analyzing Excel columns with HeaderDetectionAgent...');
+
+    const headerAnalysis = await this.headerDetectionAgent.analyze(dataBuffer, sheetName);
+
+    console.log('[HwpxGeneratorService] Header analysis result:', {
+      headerRows: headerAnalysis.headerRows,
+      dataStartRow: headerAnalysis.dataStartRow,
+      columnsCount: headerAnalysis.columns.length,
+      metaInfo: headerAnalysis.metaInfo,
+    });
+
+    // 계층적 컬럼 이름 추출
+    const columns = headerAnalysis.columns.map(c => c.name);
+
+    console.log('[HwpxGeneratorService] Detected columns (first 10):', columns.slice(0, 10));
+
+    return {
+      columns,
+      hierarchicalColumns: headerAnalysis.columns,
+      headerAnalysis,
+    };
   }
 
   /**
@@ -463,9 +501,14 @@ export class HwpxGeneratorService {
     const workbook = new ExcelJS.default.Workbook();
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
 
-    const worksheet = workbook.getWorksheet(sheetName);
+    // sheetName이 빈 문자열이면 첫 번째 시트 사용
+    const targetSheetName = sheetName && sheetName.trim() !== ''
+      ? sheetName
+      : workbook.worksheets[0]?.name;
+
+    const worksheet = workbook.getWorksheet(targetSheetName);
     if (!worksheet) {
-      throw new Error(`Sheet "${sheetName}" not found`);
+      throw new Error(`Sheet "${targetSheetName}" not found`);
     }
 
     const headerInfo = await this.findSmartHeaderRow(worksheet);
@@ -551,141 +594,111 @@ export class HwpxGeneratorService {
 
   /**
    * 스마트 헤더 감지를 사용하여 Excel 데이터 추출
-   * 메모리 최적화: eachRow 사용하여 스트리밍 방식으로 처리
-   * 다중 레벨 헤더 지원: 그룹 헤더(예: 2분기) + 필드명(예: 취업여부) = 2분기_취업여부
+   * HeaderDetectionAgent 사용하여 복잡한 다중 레벨 헤더 지원
    */
   private async extractSmartSheetData(
     buffer: Buffer,
     sheetName: string,
   ): Promise<Array<Record<string, unknown>>> {
+    // HeaderDetectionAgent를 사용하여 헤더 분석
+    console.log('[SmartSheetData] Using HeaderDetectionAgent for header analysis...');
+    const headerAnalysis = await this.headerDetectionAgent.analyze(buffer, sheetName);
+
+    console.log('[SmartSheetData] HeaderDetectionAgent result:', {
+      headerRows: headerAnalysis.headerRows,
+      dataStartRow: headerAnalysis.dataStartRow,
+      columnsCount: headerAnalysis.columns.length,
+      metaInfo: headerAnalysis.metaInfo,
+    });
+
+    if (headerAnalysis.columns.length === 0) {
+      console.log('[SmartSheetData] No columns detected, falling back to legacy parser');
+      return this.excelParser.extractSheetData(buffer, sheetName);
+    }
+
+    // ExcelJS로 데이터 추출
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.default.Workbook();
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
 
-    const worksheet = workbook.getWorksheet(sheetName);
+    // sheetName이 빈 문자열이면 첫 번째 시트 사용
+    const targetSheetName = sheetName && sheetName.trim() !== ''
+      ? sheetName
+      : workbook.worksheets[0]?.name;
+
+    const worksheet = workbook.getWorksheet(targetSheetName);
     if (!worksheet) {
-      throw new Error(`Sheet "${sheetName}" not found`);
+      throw new Error(`Sheet "${targetSheetName}" not found`);
     }
 
-    // 셀 값 추출 헬퍼 함수
-    const getCellText = (cell: { value?: unknown }): string => {
-      const value = cell?.value;
-      if (value === null || value === undefined) return '';
+    // 컬럼 인덱스 매핑 생성 (HeaderDetectionAgent 결과 사용)
+    // HeaderDetectionAgent는 이미 ExcelJS의 1-based colIndex를 반환하므로 그대로 사용
+    const columnIndexToName: Array<{ colIndex: number; name: string }> = headerAnalysis.columns.map(col => ({
+      colIndex: col.colIndex, // 이미 1-based임
+      name: col.name,
+    }));
 
-      const valueObj = value as unknown;
-      if (typeof valueObj === 'object' && valueObj !== null && 'richText' in (valueObj as object)) {
-        const richTextVal = valueObj as { richText: Array<{ text: string }> };
-        return (richTextVal.richText || []).map((t) => t.text).join('').trim();
-      } else if (typeof valueObj === 'object' && valueObj !== null && 'result' in (valueObj as object)) {
-        const resultVal = valueObj as { result: unknown };
-        return String(resultVal.result).trim();
-      }
-      return String(value).trim();
+    console.log('[SmartSheetData] Column count:', columnIndexToName.length);
+    console.log('[SmartSheetData] Column mapping (first 5):',
+      columnIndexToName.slice(0, 5).map(c => `${c.name}@${c.colIndex}`).join(', '));
+
+    // 데이터 추출 - dataStartRow부터 시작
+    const data: Array<Record<string, unknown>> = [];
+    const dataStartRow = headerAnalysis.dataStartRow;
+
+    console.log('[SmartSheetData] Extracting data from row', dataStartRow);
+
+    // 메타 행 패턴 (반복되는 클래스 헤더 필터링용)
+    const metaPatterns = [
+      /^Class Name\s*:/i,
+      /^Book Name\s*:/i,
+      /^Class Time\s*:/i,
+      /^Class Day\s*:/i,
+      /^Teacher Name\s*:/i,
+      /^Manager Name\s*:/i,
+      /^Progress Rate\s*:/i,
+      /^No\.$/,
+      /^한글이름$/,
+      /^영문이름$/,
+      /^이메일$/,
+      /쿠팡.*학기/i,  // 쿠팡 25-3학기... 패턴
+    ];
+
+    const isMetaRow = (firstCellValue: unknown): boolean => {
+      const text = String(firstCellValue || '').trim();
+      // 빈 문자열이면 메타 아님
+      if (!text) return false;
+      // 숫자만 있으면 데이터 행 (No. 컬럼의 데이터)
+      if (/^\d+$/.test(text)) return false;
+      // 메타 패턴 체크
+      return metaPatterns.some(pattern => pattern.test(text));
     };
 
-    // 스마트 헤더 행 찾기
-    const { headerRowNum, columns } = await this.findSmartHeaderRow(worksheet);
-    console.log('[SmartSheetData] Header row:', headerRowNum, 'Columns:', columns.length);
-
-    if (columns.length === 0) {
-      // 폴백: 기존 방식 사용
-      return this.excelParser.extractSheetData(buffer, sheetName);
-    }
-
-    // 그룹 헤더 행 (헤더 행 바로 위) 읽기
-    const groupHeaderRowNum = headerRowNum - 1;
-    const groupHeaders: string[] = [];
-
-    if (groupHeaderRowNum >= 1) {
-      const groupRow = worksheet.getRow(groupHeaderRowNum);
-      groupRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-        groupHeaders[colNumber - 1] = getCellText(cell);
-      });
-      console.log('[SmartSheetData] Group header row:', groupHeaderRowNum);
-    }
-
-    // 헤더 행의 컬럼 인덱스 매핑 생성 (다중 레벨 헤더 지원)
-    const headerRow = worksheet.getRow(headerRowNum);
-    const columnIndexToName: Array<{ colIndex: number; name: string }> = [];
-
-    // 먼저 중복 필드명 카운트
-    const fieldNameCount = new Map<string, number>();
-    const headerValues: string[] = [];
-
-    headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      const trimmed = getCellText(cell);
-      headerValues[colNumber - 1] = trimmed;
-      if (trimmed.length > 0 && trimmed !== 'undefined') {
-        fieldNameCount.set(trimmed, (fieldNameCount.get(trimmed) || 0) + 1);
-      }
-    });
-
-    // 분기 관련 그룹 헤더 패턴
-    const quarterPattern = /^[1-4]분기$/;
-    const seenNames = new Set<string>();
-
-    headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-      const value = getCellText(cell);
-      if (value.length === 0 || value === 'undefined') {
+    worksheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
+      // dataStartRow 이전은 건너뛰기
+      if (rowNum < dataStartRow) {
         return;
       }
 
-      let finalName = value;
-      const count = fieldNameCount.get(value) || 1;
-      const groupHeader = groupHeaders[colNumber - 1] || '';
+      // 첫 번째 셀의 값으로 메타 행 여부 확인
+      const firstCell = row.getCell(1);
+      const firstValue = this.extractCellValue(firstCell.value);
 
-      // 중복 필드명이고 그룹 헤더가 있으면 조합
-      if (count > 1 && groupHeader) {
-        // 그룹 헤더가 분기 패턴이면 "N분기_필드명" 형태로 조합
-        if (quarterPattern.test(groupHeader)) {
-          finalName = `${groupHeader}_${value}`;
-          console.log(`[SmartSheetData] Combined column: "${groupHeader}" + "${value}" = "${finalName}"`);
-        }
-        // 그룹 헤더가 섹션 제목이 아니고 필드명과 다르면 조합
-        else if (!/^\d+\./.test(groupHeader) && groupHeader !== value) {
-          finalName = `${groupHeader}_${value}`;
-          console.log(`[SmartSheetData] Combined column: "${groupHeader}" + "${value}" = "${finalName}"`);
-        }
-      }
-
-      // 여전히 중복이면 인덱스 추가
-      if (seenNames.has(finalName)) {
-        const suffix = colNumber;
-        finalName = `${finalName}_${suffix}`;
-      }
-
-      seenNames.add(finalName);
-      columnIndexToName.push({ colIndex: colNumber, name: finalName });
-    });
-
-    console.log('[SmartSheetData] Column count:', columnIndexToName.length);
-
-    // 취업현황 관련 컬럼 디버깅
-    const employmentCols = columnIndexToName.filter(c => c.name.includes('취업') || c.name.includes('분기'));
-    if (employmentCols.length > 0) {
-      console.log('[SmartSheetData] Employment related columns:', employmentCols.map(c => c.name));
-    }
-
-    // 데이터 추출 - eachRow 사용하여 메모리 효율적으로 처리
-    const data: Array<Record<string, unknown>> = [];
-
-    worksheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
-      // 헤더 행 이전은 건너뛰기
-      if (rowNum <= headerRowNum) {
+      // 메타 행 패턴이면 건너뛰기 (반복되는 클래스 헤더)
+      if (isMetaRow(firstValue)) {
         return;
       }
 
       const rowData: Record<string, unknown> = {};
       let hasData = false;
 
-      // 각 컬럼에 대해 값 추출 (직접 값만 저장, 객체 참조 최소화)
+      // 각 컬럼에 대해 값 추출
       for (const { colIndex, name } of columnIndexToName) {
         const cell = row.getCell(colIndex);
         const value = cell.value;
 
         if (value !== null && value !== undefined) {
           hasData = true;
-          // 값을 즉시 문자열로 변환하여 저장 (메모리 효율)
           rowData[name] = this.extractCellValue(value);
         }
       }
@@ -697,17 +710,9 @@ export class HwpxGeneratorService {
 
     console.log('[SmartSheetData] Extracted rows:', data.length);
     if (data.length > 0) {
-      console.log('[SmartSheetData] First row sample:', Object.keys(data[0]).slice(0, 5));
-      // 처음 5개 행의 성명 및 취업현황 확인
-      for (let i = 0; i < Math.min(5, data.length); i++) {
-        const row = data[i];
-        console.log(`[SmartSheetData] Row ${i} 성명: "${row['성명']}", 생년월일: "${row['생년월일']}"`);
-        // 취업현황 데이터 확인
-        const quarterFields = Object.keys(row).filter(k => k.includes('분기'));
-        if (quarterFields.length > 0) {
-          console.log(`[SmartSheetData] Row ${i} 취업현황:`, quarterFields.map(k => `${k}="${row[k]}"`).join(', '));
-        }
-      }
+      // 첫 행의 한글이름, 영문이름 값 확인
+      const firstRow = data[0];
+      console.log('[SmartSheetData] First row - 한글이름:', firstRow['한글이름'], ', 영문이름:', firstRow['영문이름']);
     }
 
     return data;
@@ -717,16 +722,36 @@ export class HwpxGeneratorService {
    * 머지 매핑 규칙 적용
    * 여러 Excel 컬럼을 하나로 합쳐서 HWPX 필드에 매핑할 때 사용
    * 예: "전문가 강연" + "해외 경력자 멘토링" → "핵심 세미나"
+   *
+   * @param row - Excel 데이터 행
+   * @param fieldRelations - UI에서 주입된 필드 관계 (없으면 기본 규칙 사용)
    */
-  private applyMergeMappings(row: Record<string, string>): void {
-    // 머지 매핑 규칙 정의 (나중에 context injection으로 확장 가능)
-    const mergeRules = [
-      {
-        targetColumn: '핵심 세미나',
-        sourceColumns: ['전문가 강연', '해외 경력자 멘토링'],
-        separator: ' / ',
-      },
-    ];
+  private applyMergeMappings(
+    row: Record<string, string>,
+    fieldRelations?: Array<{
+      targetField: string;
+      sourceFields: string[];
+      mergeStrategy?: 'concat' | 'first' | 'all';
+      description?: string;
+    }>,
+  ): void {
+    // fieldRelations가 제공되면 동적 규칙 사용, 없으면 기본 규칙 사용
+    const mergeRules = fieldRelations?.length
+      ? fieldRelations.map((fr) => ({
+          targetColumn: fr.targetField,
+          sourceColumns: fr.sourceFields,
+          separator: fr.mergeStrategy === 'concat' ? '' : ' / ',
+          strategy: fr.mergeStrategy || 'all',
+        }))
+      : [
+          // 기본 규칙 (레거시 호환)
+          {
+            targetColumn: '핵심 세미나',
+            sourceColumns: ['전문가 강연', '해외 경력자 멘토링'],
+            separator: ' / ',
+            strategy: 'all' as const,
+          },
+        ];
 
     for (const rule of mergeRules) {
       const values: string[] = [];
@@ -748,7 +773,16 @@ export class HwpxGeneratorService {
         }
 
         if (value && value.trim()) {
-          values.push(value.trim());
+          // strategy에 따른 처리
+          if (rule.strategy === 'first') {
+            // 첫 번째 값만 사용
+            if (values.length === 0) {
+              values.push(value.trim());
+            }
+          } else {
+            // 'all' 또는 'concat': 모든 값 수집
+            values.push(value.trim());
+          }
         }
       }
 

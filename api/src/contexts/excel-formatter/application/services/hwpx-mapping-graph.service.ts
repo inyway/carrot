@@ -7,6 +7,7 @@ import {
   type CellMapping,
 } from '../../infrastructure/adapters/hwpx-parser.adapter';
 import { EXCEL_PARSER_PORT, type ExcelParserPort } from '../ports';
+import { HeaderDetectionAgent, type HierarchicalColumn } from '../agents';
 
 /**
  * 매핑 후보 인터페이스
@@ -78,17 +79,42 @@ export interface MappingContext {
 }
 
 /**
- * 노드 상태 인터페이스
+ * 슬림 HWPX 셀 정보 (메모리 최적화)
+ * - 원본 HwpxCellInfo에서 필요한 것만 추출
+ */
+interface SlimCell {
+  r: number;      // rowIndex
+  c: number;      // colIndex
+  t: string;      // text
+  h: boolean;     // isHeader
+  cs?: number;    // colSpan (optional)
+  rs?: number;    // rowSpan (optional)
+}
+
+/**
+ * 슬림 HWPX 테이블 정보
+ */
+interface SlimTable {
+  rows: number;   // rowCount
+  cols: number;   // colCount
+  cells: SlimCell[];
+}
+
+/**
+ * 노드 상태 인터페이스 (슬림 버전)
+ * - 원본 객체 대신 최소한의 데이터만 보관
+ * - 메모리 사용량 최소화
  */
 interface GraphState {
-  // 입력
-  hwpxTable: HwpxTableInfo;
-  excelColumns: string[];
+  // 입력 (슬림)
+  table: SlimTable;                    // HWPX 테이블 (슬림)
+  columns: string[];                   // Excel 컬럼명만
+  hierarchicalColumns?: HierarchicalColumn[]; // 계층적 컬럼 정보 (선택)
 
-  // 도메인 컨텍스트
+  // 도메인 컨텍스트 (선택)
   context?: MappingContext;
 
-  // 각 노드의 출력
+  // 각 노드의 출력 (인덱스 기반)
   ruleMappings: MappingCandidate[];
   aiTemplateMappings: MappingCandidate[];
   aiExcelMappings: MappingCandidate[];
@@ -122,8 +148,41 @@ export class HwpxMappingGraphService {
     private readonly configService: ConfigService,
     @Inject(EXCEL_PARSER_PORT)
     private readonly excelParser: ExcelParserPort,
+    private readonly headerAgent: HeaderDetectionAgent,
   ) {
     this.apiKey = this.configService.get<string>('GEMINI_API_KEY');
+  }
+
+  /**
+   * HWPX 테이블을 슬림 버전으로 변환
+   */
+  private toSlimTable(table: HwpxTableInfo): SlimTable {
+    return {
+      rows: table.rowCount,
+      cols: table.colCount,
+      cells: table.cells.map(c => ({
+        r: c.rowIndex,
+        c: c.colIndex,
+        t: c.text?.trim() || '',
+        h: c.isHeader,
+        cs: c.colSpan && c.colSpan > 1 ? c.colSpan : undefined,
+        rs: c.rowSpan && c.rowSpan > 1 ? c.rowSpan : undefined,
+      })),
+    };
+  }
+
+  /**
+   * 슬림 셀에서 원본 형식으로 변환 (호환성)
+   */
+  private fromSlimCell(cell: SlimCell): HwpxCellInfo {
+    return {
+      rowIndex: cell.r,
+      colIndex: cell.c,
+      text: cell.t,
+      isHeader: cell.h,
+      colSpan: cell.cs || 1,
+      rowSpan: cell.rs || 1,
+    };
   }
 
   /**
@@ -154,18 +213,37 @@ export class HwpxMappingGraphService {
       throw new Error('HWPX 파일에 테이블이 없습니다.');
     }
 
-    // Excel 컬럼 추출 (스마트 헤더 감지)
-    const excelColumns = await this.extractSmartColumns(dataBuffer, sheetName);
+    // HeaderDetectionAgent로 Excel 분석 (다중 헤더 지원)
+    console.log('[MappingGraph] Using HeaderDetectionAgent for Excel analysis...');
+    const headerResult = await this.headerAgent.analyze(dataBuffer, sheetName);
+    console.log('[MappingGraph] Header analysis result:', {
+      headerRows: headerResult.headerRows,
+      dataStartRow: headerResult.dataStartRow,
+      columnsCount: headerResult.columns.length,
+    });
+
+    // 컬럼명 추출 (계층적 컬럼 → 단순 이름 배열)
+    const excelColumns = headerResult.columns.map(c => c.name);
 
     if (excelColumns.length === 0) {
-      throw new Error('Excel 파일에 컬럼이 없습니다.');
+      // 폴백: 기존 extractSmartColumns 사용
+      console.log('[MappingGraph] Fallback to extractSmartColumns...');
+      const fallbackColumns = await this.extractSmartColumns(dataBuffer, sheetName);
+      if (fallbackColumns.length === 0) {
+        throw new Error('Excel 파일에 컬럼이 없습니다.');
+      }
+      excelColumns.push(...fallbackColumns);
     }
 
-    // 초기 상태
+    // 슬림 테이블 생성 (메모리 최적화)
+    const slimTable = this.toSlimTable(template.tables[0]);
+
+    // 초기 상태 (슬림 버전)
     const state: GraphState = {
-      hwpxTable: template.tables[0],
-      excelColumns,
-      context,  // 도메인 컨텍스트 추가
+      table: slimTable,
+      columns: excelColumns,
+      hierarchicalColumns: headerResult.columns,
+      context,
       ruleMappings: [],
       aiTemplateMappings: [],
       aiExcelMappings: [],
@@ -175,7 +253,7 @@ export class HwpxMappingGraphService {
       validationResult: null,
     };
 
-    console.log('[MappingGraph] Table:', state.hwpxTable.rowCount, 'rows x', state.hwpxTable.colCount, 'cols');
+    console.log('[MappingGraph] SlimTable:', slimTable.rows, 'rows x', slimTable.cols, 'cols,', slimTable.cells.length, 'cells');
     console.log('[MappingGraph] Excel columns:', excelColumns.length);
 
     // Step 1: 병렬 노드 실행 (Node 1, 2, 3)
@@ -248,12 +326,12 @@ export class HwpxMappingGraphService {
   private async nodeRuleBased(state: GraphState): Promise<MappingCandidate[]> {
     console.log('[Node1:Rule] Starting rule-based mapping...');
     const candidates: MappingCandidate[] = [];
-    const { hwpxTable, excelColumns } = state;
+    const { table, columns: excelColumns } = state;
 
-    // 셀 맵 생성
-    const cellMap = new Map<string, HwpxCellInfo>();
-    for (const cell of hwpxTable.cells) {
-      cellMap.set(`${cell.rowIndex}-${cell.colIndex}`, cell);
+    // 슬림 셀 맵 생성
+    const cellMap = new Map<string, SlimCell>();
+    for (const cell of table.cells) {
+      cellMap.set(`${cell.r}-${cell.c}`, cell);
     }
 
     // 정규화 함수
@@ -276,16 +354,16 @@ export class HwpxMappingGraphService {
     };
 
     // 라벨 셀 필터링 (isHeader 또는 텍스트가 있는 셀 중 필드명처럼 보이는 것)
-    const labelCells = hwpxTable.cells.filter(cell => {
-      const text = cell.text?.trim() || '';
+    const labelCells = table.cells.filter(cell => {
+      const text = cell.t;
       if (text.length < 2) return false;
       if (isSectionOrTitle(text)) return false;
       // isHeader=true이거나, 짧은 텍스트(필드명처럼 보임)
-      return cell.isHeader || (text.length >= 2 && text.length <= 15);
+      return cell.h || (text.length >= 2 && text.length <= 15);
     });
 
     console.log('[Node1:Rule] Found', labelCells.length, 'label cells');
-    console.log('[Node1:Rule] Label cells (first 20):', labelCells.slice(0, 20).map(c => `[${c.rowIndex},${c.colIndex}]"${c.text}"(span=${c.colSpan})`).join(', '));
+    console.log('[Node1:Rule] Label cells (first 20):', labelCells.slice(0, 20).map(c => `[${c.r},${c.c}]"${c.t}"(span=${c.cs || 1})`).join(', '));
 
     // 사용된 Excel 컬럼 추적
     const usedExcelCols = new Set<string>();
@@ -311,69 +389,66 @@ export class HwpxMappingGraphService {
       );
     };
 
-    // 데이터 셀 찾기 헬퍼 함수 (더 유연하게 검색)
-    // 핵심: isHeader=false인 셀이 데이터 셀 (hwpx-parser에서 borderFillIDRef=10으로 판별)
-    // **수정**: cellMap에서 인덱스로 찾지 않고, 같은 행의 모든 셀을 순회하여 검색
-    const findDataCell = (labelCell: HwpxCellInfo): HwpxCellInfo | null => {
-      const labelText = labelCell.text?.trim() || '';
+    // 데이터 셀 찾기 헬퍼 함수 (슬림 버전)
+    const findDataCell = (labelCell: SlimCell): SlimCell | null => {
+      const labelText = labelCell.t;
 
       // 디버깅: 연락처, 이메일 등 문제가 있는 라벨
       const isDebugLabel = ['연락처', '이메일', '성명', '생년월일', '성별', '거주지'].some(l => labelText.includes(l));
 
       // 라벨 셀의 끝 위치 (colSpan 고려)
-      const labelEndCol = labelCell.colIndex + (labelCell.colSpan || 1) - 1;
+      const labelEndCol = labelCell.c + (labelCell.cs || 1) - 1;
 
       if (isDebugLabel) {
-        console.log(`[findDataCell:DEBUG] Processing "${labelText}" at [${labelCell.rowIndex},${labelCell.colIndex}], colSpan=${labelCell.colSpan}, labelEndCol=${labelEndCol}`);
+        console.log(`[findDataCell:DEBUG] Processing "${labelText}" at [${labelCell.r},${labelCell.c}], colSpan=${labelCell.cs || 1}, labelEndCol=${labelEndCol}`);
         // 해당 행의 모든 셀 출력
-        const rowCells = hwpxTable.cells.filter(c => c.rowIndex === labelCell.rowIndex);
-        console.log(`[findDataCell:DEBUG] Row ${labelCell.rowIndex} cells:`, rowCells.map(c =>
-          `[${c.colIndex}]"${c.text?.substring(0, 10) || ''}"(h=${c.isHeader})`
+        const rowCells = table.cells.filter(c => c.r === labelCell.r);
+        console.log(`[findDataCell:DEBUG] Row ${labelCell.r} cells:`, rowCells.map(c =>
+          `[${c.c}]"${c.t.substring(0, 10)}"(h=${c.h})`
         ).join(', '));
       }
 
       // 1. 같은 행에서 라벨 오른쪽에 있는 데이터 셀 찾기
-      // **핵심 수정**: 모든 셀 순회하여 같은 행에서 labelEndCol보다 큰 colIndex를 가진 isHeader=false 셀 찾기
-      const samRowCells = hwpxTable.cells
-        .filter(c => c.rowIndex === labelCell.rowIndex && c.colIndex > labelEndCol)
-        .sort((a, b) => a.colIndex - b.colIndex);  // 열 순서대로 정렬
+      const sameRowCells = table.cells
+        .filter(c => c.r === labelCell.r && c.c > labelEndCol)
+        .sort((a, b) => a.c - b.c);
 
-      for (const rightCell of samRowCells) {
-        const rightText = rightCell.text?.trim() || '';
+      for (const rightCell of sameRowCells) {
+        const rightText = rightCell.t;
         const isNotSectionTitle = !isSectionOrTitle(rightText);
 
         if (isDebugLabel) {
-          console.log(`[findDataCell:DEBUG] Checking [${rightCell.rowIndex},${rightCell.colIndex}]: text="${rightText}", isHeader=${rightCell.isHeader}`);
+          console.log(`[findDataCell:DEBUG] Checking [${rightCell.r},${rightCell.c}]: text="${rightText}", isHeader=${rightCell.h}`);
         }
 
         // isHeader=false면 데이터 셀로 확정
-        if (!rightCell.isHeader && isNotSectionTitle) {
-          console.log(`[findDataCell] "${labelText}" → found DATA cell at [${rightCell.rowIndex},${rightCell.colIndex}] = "${rightText}" (isHeader=false)`);
+        if (!rightCell.h && isNotSectionTitle) {
+          console.log(`[findDataCell] "${labelText}" → found DATA cell at [${rightCell.r},${rightCell.c}] = "${rightText}" (isHeader=false)`);
           return rightCell;
         }
 
         // 라벨 셀이면 계속 오른쪽으로 탐색
-        if (rightCell.isHeader) {
+        if (rightCell.h) {
           if (isDebugLabel) {
-            console.log(`[findDataCell:DEBUG] "${labelText}" → skip LABEL cell at [${rightCell.rowIndex},${rightCell.colIndex}] = "${rightText}"`);
+            console.log(`[findDataCell:DEBUG] "${labelText}" → skip LABEL cell at [${rightCell.r},${rightCell.c}] = "${rightText}"`);
           }
           continue;
         }
       }
 
       // 2. 아래 셀 (rowSpan 고려) - isHeader=false인 셀 찾기
-      const startRow = labelCell.rowIndex + (labelCell.rowSpan || 1);
-      const belowCells = hwpxTable.cells
-        .filter(c => c.rowIndex >= startRow && c.rowIndex <= startRow + 2 && c.colIndex === labelCell.colIndex)
-        .sort((a, b) => a.rowIndex - b.rowIndex);
+      const startRow = labelCell.r + (labelCell.rs || 1);
+      const belowCells = table.cells
+        .filter(c => c.r >= startRow && c.r <= startRow + 2 && c.c === labelCell.c)
+        .sort((a, b) => a.r - b.r);
 
       for (const belowCell of belowCells) {
-        const belowText = belowCell.text?.trim() || '';
+        const belowText = belowCell.t;
         const isNotSectionTitle = !isSectionOrTitle(belowText);
 
         // isHeader=false면 데이터 셀
-        if (!belowCell.isHeader && isNotSectionTitle) {
-          console.log(`[findDataCell] "${labelText}" → found DATA cell BELOW at [${belowCell.rowIndex},${belowCell.colIndex}] = "${belowText}"`);
+        if (!belowCell.h && isNotSectionTitle) {
+          console.log(`[findDataCell] "${labelText}" → found DATA cell BELOW at [${belowCell.r},${belowCell.c}] = "${belowText}"`);
           return belowCell;
         }
       }
@@ -408,6 +483,30 @@ export class HwpxMappingGraphService {
       // 참고: HWPX에는 근무형태 셀이 없을 수 있음. 필요시 담당직무 행 아래에 매핑
     ];
 
+    // 전문가 컨설팅 / 실전모의면접 회차별 매핑 규칙
+    // HWPX 구조 (스크린샷 기반):
+    // - Row 14: 전문가 컨설팅 데이터 - Col2(1회), Col3(2회), Col5(3회)
+    // - Row 15: 실전모의면접 데이터 - Col7(1회), Col8(2회), Col9(3회), Col10(4회), Col11(5회), Col13(6회)
+    // Excel 컬럼명: "전문가 컨설팅_1회", "실전모의면접_1회" 형태
+    const sessionMappingRules: Array<{
+      pattern: RegExp;
+      label: string;
+      hwpxRow: number;
+      hwpxCol: number;
+    }> = [
+      // 전문가 컨설팅 (Row 14) - 1회, 2회, 3회
+      { pattern: /^전문가\s?컨설팅[_\s]1회$/, label: '전문가 컨설팅 1회', hwpxRow: 14, hwpxCol: 2 },
+      { pattern: /^전문가\s?컨설팅[_\s]2회$/, label: '전문가 컨설팅 2회', hwpxRow: 14, hwpxCol: 3 },
+      { pattern: /^전문가\s?컨설팅[_\s]3회$/, label: '전문가 컨설팅 3회', hwpxRow: 14, hwpxCol: 5 },
+      // 실전모의면접 (Row 15) - 1회~6회
+      { pattern: /^실전\s?모의\s?면접[_\s]1회$/, label: '실전모의면접 1회', hwpxRow: 15, hwpxCol: 7 },
+      { pattern: /^실전\s?모의\s?면접[_\s]2회$/, label: '실전모의면접 2회', hwpxRow: 15, hwpxCol: 8 },
+      { pattern: /^실전\s?모의\s?면접[_\s]3회$/, label: '실전모의면접 3회', hwpxRow: 15, hwpxCol: 9 },
+      { pattern: /^실전\s?모의\s?면접[_\s]4회$/, label: '실전모의면접 4회', hwpxRow: 15, hwpxCol: 10 },
+      { pattern: /^실전\s?모의\s?면접[_\s]5회$/, label: '실전모의면접 5회', hwpxRow: 15, hwpxCol: 11 },
+      { pattern: /^실전\s?모의\s?면접[_\s]6회$/, label: '실전모의면접 6회', hwpxRow: 15, hwpxCol: 13 },
+    ];
+
     // 분기별 매핑 먼저 처리
     for (const excelCol of excelColumns) {
       if (usedExcelCols.has(excelCol)) continue;
@@ -434,13 +533,39 @@ export class HwpxMappingGraphService {
       }
     }
 
+    // 전문가 컨설팅 / 실전모의면접 회차별 매핑 처리
+    for (const excelCol of excelColumns) {
+      if (usedExcelCols.has(excelCol)) continue;
+
+      for (const rule of sessionMappingRules) {
+        if (rule.pattern.test(excelCol)) {
+          const cellKey = `${rule.hwpxRow}-${rule.hwpxCol}`;
+          if (!usedCellKeys.has(cellKey)) {
+            candidates.push({
+              excelColumn: excelCol,
+              hwpxRow: rule.hwpxRow,
+              hwpxCol: rule.hwpxCol,
+              labelText: rule.label,
+              confidence: 0.98,
+              source: 'rule',
+              reason: `회차별 매핑: "${excelCol}" → [${rule.hwpxRow},${rule.hwpxCol}]`,
+            });
+            console.log(`[Node1:Rule] ✓ Session Matched: "${excelCol}" → [${rule.hwpxRow},${rule.hwpxCol}]`);
+            usedExcelCols.add(excelCol);
+            usedCellKeys.add(cellKey);
+          }
+          break;
+        }
+      }
+    }
+
     // 각 Excel 컬럼에 대해 매칭 시도
     for (const excelCol of excelColumns) {
       const normalizedExcel = normalize(excelCol);
       if (normalizedExcel.length < 2 || usedExcelCols.has(excelCol)) continue;
 
       for (const labelCell of labelCells) {
-        const normalizedLabel = normalize(labelCell.text || '');
+        const normalizedLabel = normalize(labelCell.t);
 
         // 매칭 조건 (더 정밀하게)
         const exactMatch = normalizedLabel === normalizedExcel;
@@ -452,25 +577,25 @@ export class HwpxMappingGraphService {
 
         if (!isMatch) continue;
 
-        console.log(`[Node1:Rule] Trying to match Excel "${excelCol}" with label "${labelCell.text}" at [${labelCell.rowIndex},${labelCell.colIndex}]`);
+        console.log(`[Node1:Rule] Trying to match Excel "${excelCol}" with label "${labelCell.t}" at [${labelCell.r},${labelCell.c}]`);
 
         // 데이터 셀 찾기
         const dataCell = findDataCell(labelCell);
 
         if (dataCell) {
-          const cellKey = `${dataCell.rowIndex}-${dataCell.colIndex}`;
+          const cellKey = `${dataCell.r}-${dataCell.c}`;
           if (!usedCellKeys.has(cellKey)) {
             const confidence = exactMatch ? 0.95 : 0.85;
             candidates.push({
               excelColumn: excelCol,
-              hwpxRow: dataCell.rowIndex,
-              hwpxCol: dataCell.colIndex,
-              labelText: labelCell.text || '',
+              hwpxRow: dataCell.r,
+              hwpxCol: dataCell.c,
+              labelText: labelCell.t,
               confidence,
               source: 'rule',
-              reason: `라벨 "${labelCell.text}" → 데이터 셀 [${dataCell.rowIndex},${dataCell.colIndex}]`,
+              reason: `라벨 "${labelCell.t}" → 데이터 셀 [${dataCell.r},${dataCell.c}]`,
             });
-            console.log(`[Node1:Rule] ✓ Matched: "${excelCol}" → "${labelCell.text}" at [${dataCell.rowIndex},${dataCell.colIndex}]`);
+            console.log(`[Node1:Rule] ✓ Matched: "${excelCol}" → "${labelCell.t}" at [${dataCell.r},${dataCell.c}]`);
             usedExcelCols.add(excelCol);
             usedCellKeys.add(cellKey);
             break;
@@ -496,8 +621,8 @@ export class HwpxMappingGraphService {
 
     console.log('[Node2:AITemplate] Analyzing template structure...');
 
-    // 테이블 구조 설명 생성
-    const tableDesc = this.buildTableDescription(state.hwpxTable);
+    // 테이블 구조 설명 생성 (슬림 버전)
+    const tableDesc = this.buildSlimTableDescription(state.table);
 
     const prompt = `HWPX 문서 템플릿의 표 구조를 분석합니다.
 
@@ -534,7 +659,7 @@ JSON 형식으로 응답:
       for (const slot of slots) {
         const normalizedLabel = normalize(slot.labelText || '');
 
-        for (const excelCol of state.excelColumns) {
+        for (const excelCol of state.columns) {
           const normalizedExcel = normalize(excelCol);
 
           if (normalizedLabel === normalizedExcel ||
@@ -576,10 +701,10 @@ JSON 형식으로 응답:
 
     console.log('[Node3:AIExcel] Analyzing Excel headers...');
 
-    // HWPX 라벨 목록
-    const labels = state.hwpxTable.cells
-      .filter(c => c.isHeader && c.text && c.text.trim().length >= 2)
-      .map(c => ({ text: c.text!.trim(), row: c.rowIndex, col: c.colIndex }))
+    // HWPX 라벨 목록 (슬림 버전)
+    const labels = state.table.cells
+      .filter(c => c.h && c.t.length >= 2)
+      .map(c => ({ text: c.t, row: c.r, col: c.c }))
       .filter(l => !/^\d+\./.test(l.text) && l.text !== '개인이력카드');
 
     // 컨텍스트 기반 추가 정보 구성
@@ -625,7 +750,7 @@ JSON 형식으로 응답:
     const prompt = `Excel 컬럼과 HWPX 라벨을 시맨틱 매칭합니다.
 
 ## Excel 컬럼
-${state.excelColumns.map((c, i) => `${i + 1}. "${c}"`).join('\n')}
+${state.columns.map((c, i) => `${i + 1}. "${c}"`).join('\n')}
 
 ## HWPX 라벨
 ${labels.map((l, i) => `${i + 1}. "${l.text}" (위치: ${l.row}, ${l.col})`).join('\n')}
@@ -654,11 +779,11 @@ JSON 형식:
       const parsed = JSON.parse(jsonMatch[0]);
       const matches = parsed.matches || [];
 
-      // 라벨 위치에서 데이터 셀 위치 추론
+      // 라벨 위치에서 데이터 셀 위치 추론 (슬림 버전)
       const candidates: MappingCandidate[] = [];
-      const cellMap = new Map<string, HwpxCellInfo>();
-      for (const cell of state.hwpxTable.cells) {
-        cellMap.set(`${cell.rowIndex}-${cell.colIndex}`, cell);
+      const cellMap = new Map<string, SlimCell>();
+      for (const cell of state.table.cells) {
+        cellMap.set(`${cell.r}-${cell.c}`, cell);
       }
 
       for (const match of matches) {
@@ -667,14 +792,14 @@ JSON 형식:
         if (!labelCell) continue;
 
         // 데이터 셀 찾기 (오른쪽)
-        const rightCol = match.labelCol + (labelCell.colSpan || 1);
+        const rightCol = match.labelCol + (labelCell.cs || 1);
         const rightCell = cellMap.get(`${match.labelRow}-${rightCol}`);
 
-        if (rightCell && !rightCell.isHeader) {
+        if (rightCell && !rightCell.h) {
           candidates.push({
             excelColumn: match.excelColumn,
-            hwpxRow: rightCell.rowIndex,
-            hwpxCol: rightCell.colIndex,
+            hwpxRow: rightCell.r,
+            hwpxCol: rightCell.c,
             labelText: match.labelText,
             confidence: match.confidence || 0.7,
             source: 'ai_excel',
@@ -798,11 +923,11 @@ JSON 형식:
       }
 
       // 범위 검사
-      if (candidate.hwpxRow < 0 || candidate.hwpxRow >= state.hwpxTable.rowCount) {
+      if (candidate.hwpxRow < 0 || candidate.hwpxRow >= state.table.rows) {
         issues.push(`행 범위 초과: ${candidate.hwpxRow}`);
         continue;
       }
-      if (candidate.hwpxCol < 0 || candidate.hwpxCol >= state.hwpxTable.colCount) {
+      if (candidate.hwpxCol < 0 || candidate.hwpxCol >= state.table.cols) {
         issues.push(`열 범위 초과: ${candidate.hwpxCol}`);
         continue;
       }
@@ -850,25 +975,25 @@ JSON 형식:
   }
 
   /**
-   * 테이블 구조 설명 생성
+   * 슬림 테이블 구조 설명 생성
    */
-  private buildTableDescription(table: HwpxTableInfo): string {
+  private buildSlimTableDescription(table: SlimTable): string {
     const lines: string[] = [];
-    lines.push(`크기: ${table.rowCount}행 x ${table.colCount}열\n`);
+    lines.push(`크기: ${table.rows}행 x ${table.cols}열\n`);
 
-    const rowMap = new Map<number, HwpxCellInfo[]>();
+    const rowMap = new Map<number, SlimCell[]>();
     for (const cell of table.cells) {
-      if (!rowMap.has(cell.rowIndex)) rowMap.set(cell.rowIndex, []);
-      rowMap.get(cell.rowIndex)!.push(cell);
+      if (!rowMap.has(cell.r)) rowMap.set(cell.r, []);
+      rowMap.get(cell.r)!.push(cell);
     }
 
     const sortedRows = Array.from(rowMap.keys()).sort((a, b) => a - b).slice(0, 25);
     for (const rowIdx of sortedRows) {
-      const cells = rowMap.get(rowIdx)!.sort((a, b) => a.colIndex - b.colIndex);
+      const cells = rowMap.get(rowIdx)!.sort((a, b) => a.c - b.c);
       for (const cell of cells) {
-        const text = cell.text?.trim() || '(빈셀)';
-        const label = cell.isHeader ? ' [라벨]' : '';
-        lines.push(`(${cell.rowIndex},${cell.colIndex}): "${text}"${label}`);
+        const text = cell.t || '(빈셀)';
+        const label = cell.h ? ' [라벨]' : '';
+        lines.push(`(${cell.r},${cell.c}): "${text}"${label}`);
       }
     }
 
@@ -889,9 +1014,14 @@ JSON 형식:
     const workbook = new ExcelJS.default.Workbook();
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
 
-    const worksheet = workbook.getWorksheet(sheetName);
+    // sheetName이 빈 문자열이면 첫 번째 시트 사용
+    const targetSheetName = sheetName && sheetName.trim() !== ''
+      ? sheetName
+      : workbook.worksheets[0]?.name;
+
+    const worksheet = workbook.getWorksheet(targetSheetName);
     if (!worksheet) {
-      throw new Error(`Sheet "${sheetName}" not found`);
+      throw new Error(`Sheet "${targetSheetName}" not found`);
     }
 
     // 셀 값 추출 헬퍼 함수
@@ -1077,19 +1207,18 @@ JSON 형식:
     const mappedExcelColumns = new Set(state.finalMappings.map(m => m.excelColumn));
     const mappedCellKeys = new Set(state.finalMappings.map(m => `${m.hwpxRow}-${m.hwpxCol}`));
 
-    // 셀 맵 생성
-    const cellMap = new Map<string, HwpxCellInfo>();
-    for (const cell of state.hwpxTable.cells) {
-      cellMap.set(`${cell.rowIndex}-${cell.colIndex}`, cell);
+    // 슬림 셀 맵 생성
+    const cellMap = new Map<string, SlimCell>();
+    for (const cell of state.table.cells) {
+      cellMap.set(`${cell.r}-${cell.c}`, cell);
     }
 
-    // HWPX 라벨 셀 추출
-    const labelCells = state.hwpxTable.cells.filter(cell =>
-      cell.isHeader &&
-      cell.text &&
-      cell.text.trim().length >= 2 &&
-      !/^\d+\./.test(cell.text.trim()) &&
-      cell.text.trim() !== '개인이력카드'
+    // HWPX 라벨 셀 추출 (슬림 버전)
+    const labelCells = state.table.cells.filter(cell =>
+      cell.h &&
+      cell.t.length >= 2 &&
+      !/^\d+\./.test(cell.t) &&
+      cell.t !== '개인이력카드'
     );
 
     // 각 필수 필드 검사
@@ -1113,10 +1242,10 @@ JSON 형식:
         continue;
       }
 
-      // 필드가 매핑되지 않음 - HWPX에서 해당 라벨 셀 찾기
-      let targetLabelCell: HwpxCellInfo | null = null;
+      // 필드가 매핑되지 않음 - HWPX에서 해당 라벨 셀 찾기 (슬림 버전)
+      let targetLabelCell: SlimCell | null = null;
       for (const labelCell of labelCells) {
-        const normalizedLabel = normalize(labelCell.text || '');
+        const normalizedLabel = normalize(labelCell.t);
         if (allNames.some(name => normalize(name) === normalizedLabel)) {
           targetLabelCell = labelCell;
           break;
@@ -1129,20 +1258,20 @@ JSON 형식:
 
       if (targetLabelCell) {
         // 라벨 오른쪽 셀 찾기
-        const rightCol = targetLabelCell.colIndex + (targetLabelCell.colSpan || 1);
-        const rightCell = cellMap.get(`${targetLabelCell.rowIndex}-${rightCol}`);
+        const rightCol = targetLabelCell.c + (targetLabelCell.cs || 1);
+        const rightCell = cellMap.get(`${targetLabelCell.r}-${rightCol}`);
 
-        if (rightCell && !rightCell.isHeader) {
-          dataRow = rightCell.rowIndex;
-          dataCol = rightCell.colIndex;
+        if (rightCell && !rightCell.h) {
+          dataRow = rightCell.r;
+          dataCol = rightCell.c;
         } else {
           // 아래 셀 시도
-          const belowRow = targetLabelCell.rowIndex + (targetLabelCell.rowSpan || 1);
-          const belowCell = cellMap.get(`${belowRow}-${targetLabelCell.colIndex}`);
+          const belowRow = targetLabelCell.r + (targetLabelCell.rs || 1);
+          const belowCell = cellMap.get(`${belowRow}-${targetLabelCell.c}`);
 
-          if (belowCell && !belowCell.isHeader) {
-            dataRow = belowCell.rowIndex;
-            dataCol = belowCell.colIndex;
+          if (belowCell && !belowCell.h) {
+            dataRow = belowCell.r;
+            dataCol = belowCell.c;
           }
         }
       }
@@ -1151,7 +1280,7 @@ JSON 형식:
       let suggestedExcelColumn: string | undefined;
       let bestScore = 0;
 
-      for (const excelCol of state.excelColumns) {
+      for (const excelCol of state.columns) {
         if (mappedExcelColumns.has(excelCol)) continue;
 
         const normalizedExcel = normalize(excelCol);

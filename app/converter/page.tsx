@@ -11,6 +11,16 @@ import ContextChat, { type MappingContext } from '@/app/components/ContextChat';
 // 지원하는 데이터 형식
 // type DataFormat = 'xlsx' | 'xls' | 'csv' | 'json';
 
+// 진행률 정보 인터페이스
+interface ProgressInfo {
+  phase: 'init' | 'reading' | 'generating' | 'packaging' | 'complete' | 'error';
+  current: number;
+  total: number;
+  percentage: number;
+  message: string;
+  currentFile?: string;
+}
+
 interface FileInfo {
   file: File;
   format: string;
@@ -129,6 +139,9 @@ export default function ConverterPage() {
   const templateInputRef = useRef<HTMLInputElement>(null);
   const dataInputRef = useRef<HTMLInputElement>(null);
 
+  // 템플릿 파일의 최신 값을 추적하는 ref (클로저 문제 해결)
+  const templateFileRef = useRef<TemplateInfo | null>(null);
+
   // 상태
   const [templateFile, setTemplateFile] = useState<TemplateInfo | null>(null);
   const [dataFile, setDataFile] = useState<FileInfo | null>(null);
@@ -141,6 +154,12 @@ export default function ConverterPage() {
   const [generating, setGenerating] = useState(false);
   const [autoMapping, setAutoMapping] = useState(false);
 
+  // AI 매핑 프로그레스 상태
+  const [mappingProgress, setMappingProgress] = useState(0);
+
+  // 직접 매핑 아코디언 상태 (기본 접힌 상태)
+  const [isDirectMappingOpen, setIsDirectMappingOpen] = useState(false);
+
   // 미리보기 데이터
   const [previewData, setPreviewData] = useState<Record<string, unknown>[] | null>(null);
 
@@ -150,6 +169,10 @@ export default function ConverterPage() {
 
   // 매핑 컨텍스트 (AI 매핑에 참고할 도메인 정보)
   const [mappingContext, setMappingContext] = useState<MappingContext | null>(null);
+
+  // 진행률 상태
+  const [progress, setProgress] = useState<ProgressInfo | null>(null);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   // 템플릿 파일 선택
   const handleTemplateSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -171,6 +194,7 @@ export default function ConverterPage() {
     };
 
     setTemplateFile(fileInfo);
+    templateFileRef.current = fileInfo; // ref도 즉시 업데이트
     setMappings([]);
 
     // 템플릿 분석
@@ -283,6 +307,15 @@ export default function ConverterPage() {
         } : null);
 
         setPreviewData(result.preview || null);
+
+        // 템플릿 파일도 있으면 자동으로 AI 매핑 시작
+        // templateFileRef.current 사용: state가 아닌 ref를 사용하여 최신 값 참조
+        if (templateFileRef.current) {
+          // 약간의 딜레이 후 자동 매핑 시작 (UI 업데이트 후)
+          setTimeout(() => {
+            handleAutoMapping();
+          }, 100);
+        }
       }
     } catch (error) {
       console.error('Data analyze error:', error);
@@ -403,20 +436,38 @@ export default function ConverterPage() {
     setValidationResult(null); // 적용 후 검증 결과 초기화
   };
 
-  // AI 자동 매핑
+  // AI 자동 매핑 (프로그레스바 포함)
   const handleAutoMapping = async () => {
-    if (!templateFile || !dataFile) {
-      alert('템플릿과 데이터 파일을 모두 업로드해주세요.');
+    // templateFileRef.current 사용: 클로저 문제 해결을 위해 ref에서 최신 값 참조
+    const currentTemplateFile = templateFileRef.current || templateFile;
+
+    if (!currentTemplateFile) {
+      alert('템플릿 파일을 먼저 업로드해주세요.');
+      return;
+    }
+
+    if (!dataFile) {
+      alert('데이터 파일을 업로드해주세요.');
       return;
     }
 
     setAutoMapping(true);
+    setMappingProgress(0);
     setValidationResult(null);
+
+    // 프로그레스 애니메이션 시작
+    const progressInterval = setInterval(() => {
+      setMappingProgress(prev => {
+        if (prev >= 90) return prev; // 90%에서 멈추고 완료까지 대기
+        return prev + Math.random() * 15;
+      });
+    }, 300);
+
     try {
-      if (templateFile.format === 'hwpx') {
+      if (currentTemplateFile.format === 'hwpx') {
         // HWPX AI 매핑 (기존 API 사용)
         const formData = new FormData();
-        formData.append('template', templateFile.file);
+        formData.append('template', currentTemplateFile.file);
         formData.append('excel', dataFile.file);
         if (dataFile.selectedSheet) {
           formData.append('sheetName', dataFile.selectedSheet);
@@ -482,7 +533,7 @@ export default function ConverterPage() {
         }
       } else {
         // Excel/CSV 템플릿 자동 매핑 (이름 기반 매칭)
-        const templateFields = templateFile.placeholders || templateFile.columns || [];
+        const templateFields = currentTemplateFile.placeholders || currentTemplateFile.columns || [];
         const dataColumns = dataFile.columns || [];
 
         const newMappings: MappingItem[] = templateFields.map(field => {
@@ -510,7 +561,12 @@ export default function ConverterPage() {
       console.error('Auto mapping error:', error);
       alert('자동 매핑 중 오류가 발생했습니다.');
     } finally {
-      setAutoMapping(false);
+      clearInterval(progressInterval);
+      setMappingProgress(100);
+      setTimeout(() => {
+        setAutoMapping(false);
+        setMappingProgress(0);
+      }, 500);
     }
   };
 
@@ -530,89 +586,121 @@ export default function ConverterPage() {
     });
   };
 
-  // 보고서 생성
+  // 보고서 생성 - 간단한 동기식 API 사용 (HWPX와 동일한 방식)
   const handleGenerate = async () => {
-    if (!templateFile || !dataFile) {
-      alert('템플릿과 데이터 파일을 모두 업로드해주세요.');
+    // 디버깅용 로그
+    console.log('[Converter] handleGenerate called', {
+      templateFile: templateFile?.name,
+      dataFile: dataFile?.name,
+      mappingsCount: mappings.length,
+    });
+
+    if (!templateFile) {
+      alert('템플릿 파일을 업로드해주세요.');
+      return;
+    }
+
+    if (!dataFile) {
+      alert('데이터 파일을 업로드해주세요.');
       return;
     }
 
     if (mappings.length === 0) {
-      alert('컬럼 매핑을 설정해주세요.');
+      alert('컬럼 매핑을 설정해주세요. AI 자동 매핑 버튼을 클릭하거나 직접 매핑하세요.');
       return;
     }
 
     setGenerating(true);
+    setProgress({ phase: 'init', current: 0, total: 0, percentage: 0, message: '보고서 생성 중...' });
+
     try {
-      if (templateFile.format === 'hwpx') {
-        // HWPX 생성 (기존 API 사용)
-        const formData = new FormData();
-        formData.append('template', templateFile.file);
-        formData.append('excel', dataFile.file);
-        if (dataFile.selectedSheet) {
-          formData.append('sheetName', dataFile.selectedSheet);
-        }
-        // 매핑 형식 변환
-        const hwpxMappings = mappings.map(m => ({
-          hwpxField: m.templateField,
-          excelColumn: m.dataColumn,
-        }));
-        formData.append('mappings', JSON.stringify(hwpxMappings));
-        if (fileNameColumn) {
-          formData.append('fileNameColumn', fileNameColumn);
-        }
+      // FormData 준비
+      const formData = new FormData();
+      formData.append('template', templateFile.file);
+      formData.append('data', dataFile.file);
 
-        const res = await fetch('/api/hwpx/generate', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!res.ok) {
-          throw new Error('HWPX 생성 실패');
-        }
-
-        // ZIP 다운로드
-        const blob = await res.blob();
-        downloadBlob(blob, `hwpx_output_${Date.now()}.zip`);
-      } else {
-        // Excel/CSV 템플릿 기반 생성
-        const formData = new FormData();
-        formData.append('template', templateFile.file);
-        formData.append('data', dataFile.file);
-        formData.append('templateFormat', templateFile.format);
-        formData.append('dataFormat', dataFile.format);
-        if (templateFile.selectedSheet) {
-          formData.append('templateSheet', templateFile.selectedSheet);
-        }
-        if (dataFile.selectedSheet) {
-          formData.append('dataSheet', dataFile.selectedSheet);
-        }
-        formData.append('mappings', JSON.stringify(mappings));
-        if (fileNameColumn) {
-          formData.append('fileNameColumn', fileNameColumn);
-        }
-
-        const res = await fetch('/api/converter/generate', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!res.ok) {
-          const error = await res.text();
-          throw new Error(error || '보고서 생성 실패');
-        }
-
-        const blob = await res.blob();
-        const ext = templateFile.format === 'xlsx' ? 'zip' : templateFile.format;
-        downloadBlob(blob, `reports_${Date.now()}.${ext}`);
+      // 시트 정보
+      if (templateFile.selectedSheet) {
+        formData.append('sheetName', templateFile.selectedSheet);
+      }
+      if (dataFile.selectedSheet) {
+        formData.append('dataSheet', dataFile.selectedSheet);
       }
 
+      // 매핑 형식 변환 (템플릿 형식에 따라)
+      let mappingsToSend;
+      if (templateFile.format === 'hwpx') {
+        // HWPX: 셀 위치 기반 매핑
+        mappingsToSend = mappings
+          .filter(m => m.hwpxRow !== undefined && m.hwpxCol !== undefined)
+          .map(m => ({
+            excelColumn: m.dataColumn,
+            hwpxRow: m.hwpxRow,
+            hwpxCol: m.hwpxCol,
+          }));
+      } else {
+        // Excel/CSV: 필드명 기반 매핑
+        mappingsToSend = mappings.map(m => ({
+          templateField: m.templateField,
+          dataColumn: m.dataColumn,
+        }));
+      }
+      formData.append('mappings', JSON.stringify(mappingsToSend));
+
+      // 파일명 컬럼
+      if (fileNameColumn) {
+        formData.append('fileNameColumn', fileNameColumn);
+      }
+
+      // mappingContext 전달 (필드 머지 규칙 등)
+      if (mappingContext && Object.keys(mappingContext).length > 0) {
+        formData.append('mappingContext', JSON.stringify(mappingContext));
+        console.log('[Converter] Generate with mappingContext:', mappingContext);
+      }
+
+      // 동기식 API 호출 (HWPX와 동일한 방식)
+      console.log('[Converter] Sending request to /api/generate...');
+      const res = await fetch('http://localhost:4000/api/generate', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || '보고서 생성 실패');
+      }
+
+      // 결과 다운로드
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get('Content-Disposition');
+      let fileName = `reports_${Date.now()}`;
+
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (match && match[1]) {
+          fileName = decodeURIComponent(match[1].replace(/['"]/g, ''));
+        }
+      } else {
+        fileName = templateFile?.format === 'hwpx'
+          ? `hwpx_output_${Date.now()}.zip`
+          : templateFile?.format === 'csv'
+            ? `reports_${Date.now()}.csv`
+            : `reports_${Date.now()}.zip`;
+      }
+
+      // 다운로드 실행
+      downloadBlob(blob, fileName);
+      setProgress({ phase: 'complete', current: 100, total: 100, percentage: 100, message: '완료!' });
       alert('보고서 생성이 완료되었습니다!');
+
     } catch (error) {
       console.error('Generate error:', error);
       alert('보고서 생성 중 오류가 발생했습니다: ' + (error instanceof Error ? error.message : ''));
+      setProgress({ phase: 'error', current: 0, total: 0, percentage: 0, message: '오류 발생' });
     } finally {
       setGenerating(false);
+      setProgress(null);
+      setCurrentJobId(null);
     }
   };
 
@@ -947,6 +1035,11 @@ export default function ConverterPage() {
                     <h3 className="font-medium text-gray-900 flex items-center gap-2">
                       <span className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-sm font-bold">3</span>
                       컬럼 매핑
+                      {mappings.length > 0 && (
+                        <span className="ml-2 text-sm text-gray-500 font-normal">
+                          ({mappings.filter(m => m.dataColumn).length}개 매핑됨)
+                        </span>
+                      )}
                     </h3>
                     <button
                       onClick={handleAutoMapping}
@@ -972,41 +1065,93 @@ export default function ConverterPage() {
                     </button>
                   </div>
 
-                  <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                    {(templateFile.placeholders || templateFile.columns || []).map((field, idx) => {
-                      const mapping = mappings.find(m => m.templateField === field);
-                      return (
-                        <div key={idx} className="flex items-center gap-3">
-                          <div className="flex-1 px-3 py-2 bg-orange-50 rounded-lg text-sm text-gray-700 truncate">
-                            {field}
-                          </div>
-                          <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                          </svg>
-                          <select
-                            value={mapping?.dataColumn || ''}
-                            onChange={(e) => handleMappingChange(field, e.target.value)}
-                            className={`flex-1 px-3 py-2 border rounded-lg text-sm ${
-                              mapping?.dataColumn
-                                ? mapping.confidence && mapping.confidence < 1
-                                  ? 'border-yellow-300 bg-yellow-50'
-                                  : 'border-green-300 bg-green-50'
-                                : 'border-gray-300'
-                            }`}
-                          >
-                            <option value="">-- 선택 --</option>
-                            {(dataFile.columns || []).map((col, colIdx) => (
-                              <option key={colIdx} value={col}>{col}</option>
-                            ))}
-                          </select>
-                        </div>
-                      );
-                    })}
+                  {/* AI 매핑 진행 프로그레스바 */}
+                  {autoMapping && (
+                    <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <svg className="w-5 h-5 text-purple-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        <span className="text-sm font-medium text-purple-700">AI가 매핑을 분석하고 있습니다...</span>
+                      </div>
+                      <div className="h-2 bg-purple-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-300 ease-out"
+                          style={{ width: `${Math.min(mappingProgress, 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-purple-600 mt-1">
+                        {mappingProgress < 30 ? '템플릿 구조 분석 중...' :
+                         mappingProgress < 60 ? '데이터 컬럼 매칭 중...' :
+                         mappingProgress < 90 ? '최적 매핑 계산 중...' :
+                         '매핑 완료 중...'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 4. 직접 매핑 */}
+              {templateFile && dataFile && (
+                <div className="bg-white rounded-xl border border-gray-200 p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                      <span className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-sm font-bold">4</span>
+                      직접 매핑
+                    </h3>
+                    <button
+                      onClick={() => setIsDirectMappingOpen(!isDirectMappingOpen)}
+                      className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-all flex items-center gap-1"
+                    >
+                      <svg
+                        className={`w-4 h-4 transition-transform ${isDirectMappingOpen ? 'rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                      {isDirectMappingOpen ? '접기' : '펼치기'}
+                    </button>
                   </div>
+
+                  {isDirectMappingOpen && (
+                    <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                      {(templateFile.placeholders || templateFile.columns || []).map((field, idx) => {
+                        const mapping = mappings.find(m => m.templateField === field);
+                        return (
+                          <div key={idx} className="flex items-center gap-3">
+                            <div className="flex-1 px-3 py-2 bg-orange-50 rounded-lg text-sm text-gray-700 truncate">
+                              {field}
+                            </div>
+                            <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                            </svg>
+                            <select
+                              value={mapping?.dataColumn || ''}
+                              onChange={(e) => handleMappingChange(field, e.target.value)}
+                              className={`flex-1 px-3 py-2 border rounded-lg text-sm ${
+                                mapping?.dataColumn
+                                  ? mapping.confidence && mapping.confidence < 1
+                                    ? 'border-yellow-300 bg-yellow-50'
+                                    : 'border-green-300 bg-green-50'
+                                  : 'border-gray-300'
+                              }`}
+                            >
+                              <option value="">-- 선택 --</option>
+                              {(dataFile.columns || []).map((col, colIdx) => (
+                                <option key={colIdx} value={col}>{col}</option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {/* 파일명 컬럼 선택 */}
                   {dataFile.columns && dataFile.columns.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-200">
+                    <div className={`pt-4 border-t border-gray-200 ${isDirectMappingOpen ? 'mt-4' : ''}`}>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         파일명 컬럼 (선택사항)
                       </label>
@@ -1025,156 +1170,83 @@ export default function ConverterPage() {
                       </p>
                     </div>
                   )}
-
-                  {/* 검증 결과 UI */}
-                  {templateFile.format === 'hwpx' && (
-                    <div className="mt-4 pt-4 border-t border-gray-200">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          매핑 검증
-                        </h4>
-                        <button
-                          onClick={() => validateMappings(mappings)}
-                          disabled={validating || mappings.length === 0}
-                          className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 flex items-center gap-1"
-                        >
-                          {validating ? (
-                            <>
-                              <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                              </svg>
-                              검증 중...
-                            </>
-                          ) : (
-                            '검증하기'
-                          )}
-                        </button>
-                      </div>
-
-                      {validationResult && (
-                        <div className="space-y-3">
-                          {/* 검증 요약 */}
-                          <div className={`p-3 rounded-lg text-sm ${
-                            validationResult.isValid
-                              ? 'bg-green-50 border border-green-200'
-                              : 'bg-yellow-50 border border-yellow-200'
-                          }`}>
-                            <div className="flex items-center justify-between">
-                              <span className={validationResult.isValid ? 'text-green-700' : 'text-yellow-700'}>
-                                {validationResult.isValid ? (
-                                  <span className="flex items-center gap-1">
-                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                    </svg>
-                                    모든 필수 필드가 매핑됨
-                                  </span>
-                                ) : (
-                                  <span className="flex items-center gap-1">
-                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                    </svg>
-                                    {validationResult.missingFields}개 필드 누락
-                                  </span>
-                                )}
-                              </span>
-                              <span className="text-gray-500 text-xs">
-                                {validationResult.mappedFields}/{validationResult.totalFields} 매핑됨
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* 누락된 필드 목록 */}
-                          {validationResult.issues.filter(i => i.type === 'missing').length > 0 && (
-                            <div className="space-y-2">
-                              <p className="text-xs text-gray-600 font-medium">누락된 필드:</p>
-                              {validationResult.issues
-                                .filter(i => i.type === 'missing')
-                                .map((issue, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="flex items-center justify-between p-2 bg-red-50 border border-red-100 rounded text-xs"
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-red-600 font-medium">{issue.field}</span>
-                                      {issue.hwpxRow !== undefined && issue.hwpxCol !== undefined && (
-                                        <span className="text-gray-400">
-                                          [{issue.hwpxRow}, {issue.hwpxCol}]
-                                        </span>
-                                      )}
-                                    </div>
-                                    {issue.suggestedExcelColumn && (
-                                      <span className="text-blue-600">
-                                        추천: {issue.suggestedExcelColumn}
-                                      </span>
-                                    )}
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-
-                          {/* 제안된 매핑 적용 버튼 */}
-                          {validationResult.suggestions.length > 0 && (
-                            <button
-                              onClick={() => applySuggestions(validationResult.suggestions)}
-                              className="w-full py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-all flex items-center justify-center gap-2"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                              </svg>
-                              {validationResult.suggestions.length}개 제안 매핑 추가
-                            </button>
-                          )}
-
-                          {/* 경고 메시지 */}
-                          {validationResult.issues.filter(i => i.type === 'warning').length > 0 && (
-                            <div className="space-y-1">
-                              <p className="text-xs text-gray-600 font-medium">경고:</p>
-                              {validationResult.issues
-                                .filter(i => i.type === 'warning')
-                                .map((issue, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="p-2 bg-orange-50 border border-orange-100 rounded text-xs text-orange-700"
-                                  >
-                                    {issue.message}
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
               )}
 
-              {/* 생성 버튼 */}
-              <button
-                onClick={handleGenerate}
-                disabled={generating || !templateFile || !dataFile || mappings.length === 0}
-                className="w-full py-4 bg-gradient-to-r from-teal-600 to-blue-600 text-white rounded-xl hover:from-teal-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium flex items-center justify-center gap-2"
-              >
-                {generating ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    보고서 생성 중...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    보고서 일괄 생성
-                  </>
+              {/* 생성 버튼 및 진행률 표시 */}
+              <div className="space-y-3">
+                <button
+                  onClick={handleGenerate}
+                  disabled={generating || !templateFile || !dataFile || mappings.length === 0}
+                  className="w-full py-4 bg-gradient-to-r from-teal-600 to-blue-600 text-white rounded-xl hover:from-teal-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium flex items-center justify-center gap-2"
+                >
+                  {generating ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      보고서 생성 중...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      보고서 일괄 생성
+                    </>
+                  )}
+                </button>
+
+                {/* 진행률 표시 */}
+                {progress && (
+                  <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+                    {/* 진행률 바 */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-700 font-medium">
+                          {progress.phase === 'init' && '초기화'}
+                          {progress.phase === 'reading' && '데이터 읽기'}
+                          {progress.phase === 'generating' && '보고서 생성'}
+                          {progress.phase === 'packaging' && '패키징'}
+                          {progress.phase === 'complete' && '완료'}
+                          {progress.phase === 'error' && '오류'}
+                        </span>
+                        <span className="text-gray-500">
+                          {progress.percentage.toFixed(0)}%
+                        </span>
+                      </div>
+                      <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-300 ${
+                            progress.phase === 'error'
+                              ? 'bg-red-500'
+                              : progress.phase === 'complete'
+                                ? 'bg-green-500'
+                                : 'bg-gradient-to-r from-teal-500 to-blue-500'
+                          }`}
+                          style={{ width: `${progress.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* 상세 정보 */}
+                    <div className="flex items-center justify-between text-xs text-gray-500">
+                      <span>{progress.message}</span>
+                      {progress.total > 0 && (
+                        <span>{progress.current} / {progress.total}</span>
+                      )}
+                    </div>
+
+                    {/* 현재 처리 중인 파일 */}
+                    {progress.currentFile && (
+                      <div className="text-xs text-blue-600 truncate">
+                        처리 중: {progress.currentFile}
+                      </div>
+                    )}
+                  </div>
                 )}
-              </button>
+              </div>
             </div>
 
             {/* 오른쪽: 템플릿 기반 미리보기 */}
@@ -1543,6 +1615,7 @@ export default function ConverterPage() {
         onContextUpdate={(ctx: MappingContext) => setMappingContext(ctx)}
         currentContext={mappingContext || undefined}
       />
+
     </div>
   );
 }

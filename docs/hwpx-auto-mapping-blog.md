@@ -587,6 +587,158 @@ AI Excel (의미적 매칭)
 
 ---
 
+## 추가 개선: 통합 API 아키텍처 (LangGraph 스타일 라우팅)
+
+### 기존 문제
+
+초기 구현에서는 템플릿 형식별로 분리된 API 엔드포인트를 사용했습니다:
+
+```
+기존 아키텍처:
+
+프론트엔드
+  ├─ HWPX 템플릿 → /api/hwpx/generate (NestJS)
+  └─ Excel/CSV 템플릿 → /api/converter/generate (Next.js API Route)
+```
+
+이 방식의 문제점:
+- 프론트엔드에서 형식별 분기 로직 필요
+- MappingContext(필드 머지 규칙)가 일부 형식에만 적용
+- 코드 중복 (데이터 추출, 머지 로직 등)
+
+### 해결: 단일 진입점 + 내부 라우팅
+
+LangGraph의 **Conditional Edge** 패턴을 적용하여 통합 API를 구현했습니다:
+
+```
+개선된 아키텍처:
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                    UnifiedGeneratorService                          │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ Node 1: Format Detection                                     │   │
+│  │   detectFormat(templateFileName)                             │   │
+│  │   .hwpx | .xlsx | .xls | .csv → 형식 결정                     │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                      │
+│                              ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ Router Node: Conditional Branch                              │   │
+│  │                                                              │   │
+│  │   case 'hwpx'  ──► generateHwpx()  ──► HwpxGeneratorService │   │
+│  │   case 'xlsx'  ──► generateExcel() ──► ExcelJS + JSZip      │   │
+│  │   case 'csv'   ──► generateCsv()   ──► String Buffer        │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                      │
+│                              ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ Shared Node: applyMergeMappings()                            │   │
+│  │   모든 형식에 공통으로 MappingContext 적용                     │   │
+│  │   fieldRelations: sourceFields → targetField 머지            │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                      │
+│                              ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ Output Node: GenerateResult                                  │   │
+│  │   { buffer, contentType, fileName }                          │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 핵심 코드
+
+```typescript
+@Injectable()
+export class UnifiedGeneratorService {
+  constructor(private readonly hwpxGeneratorService: HwpxGeneratorService) {}
+
+  // 단일 진입점
+  async generate(params: UnifiedGenerateParams): Promise<GenerateResult> {
+    // Node 1: Format Detection
+    const templateFormat = this.detectFormat(params.templateFileName);
+
+    // Router Node: Conditional Branch
+    switch (templateFormat) {
+      case 'hwpx':
+        return this.generateHwpx(params);
+
+      case 'xlsx':
+      case 'xls':
+        return this.generateExcel(params);
+
+      case 'csv':
+        return this.generateCsv(params);
+
+      default:
+        throw new BadRequestException(`지원하지 않는 템플릿 형식: ${templateFormat}`);
+    }
+  }
+
+  // 각 브랜치에서 공통 머지 로직 호출
+  private async generateExcel(params: UnifiedGenerateParams): Promise<GenerateResult> {
+    // ... Excel 로드 및 처리
+
+    for (const row of dataRows) {
+      // Shared Node: 머지 규칙 적용
+      if (params.mappingContext?.fieldRelations) {
+        this.applyMergeMappings(row, params.mappingContext.fieldRelations);
+      }
+      // ... Excel 파일 생성
+    }
+  }
+}
+```
+
+### MappingContext와 필드 머지
+
+UI에서 정의한 필드 관계 규칙을 모든 템플릿 형식에 적용합니다:
+
+```typescript
+interface MappingContext {
+  description?: string;
+  fieldRelations?: Array<{
+    targetField: string;      // 결과 필드명
+    sourceFields: string[];   // 소스 필드들
+    mergeStrategy?: 'concat' | 'first' | 'all';
+  }>;
+}
+
+// 예시: "전문가 강연" + "해외 경력자 멘토링" → "핵심 세미나"
+{
+  targetField: "핵심 세미나",
+  sourceFields: ["전문가 강연", "해외 경력자 멘토링"],
+  mergeStrategy: "all"  // 결과: "O / O" 또는 "X / O"
+}
+```
+
+### 통합 API의 장점
+
+| 기존 | 개선 후 |
+|-----|--------|
+| 형식별 분리된 API | 단일 `/api/generate` 엔드포인트 |
+| 프론트엔드에서 분기 | 백엔드에서 자동 라우팅 |
+| MappingContext 일부 적용 | 모든 형식에 일관되게 적용 |
+| 코드 중복 | 공통 로직 재사용 |
+
+### LangGraph 패턴과의 비교
+
+실제 LangGraph를 사용하지 않았지만 동일한 설계 원칙을 적용했습니다:
+
+```
+LangGraph 개념          우리 구현
+──────────────────────────────────────────
+State                   UnifiedGenerateParams
+Node                    각 generate*() 메서드
+Conditional Edge        switch(templateFormat)
+Shared State           MappingContext
+Output                 GenerateResult
+```
+
+이 패턴의 핵심은 **단일 진입점 → 조건부 분기 → 공통 후처리 → 통합 출력**입니다.
+
+---
+
 ## 참고 자료
 
 - [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)

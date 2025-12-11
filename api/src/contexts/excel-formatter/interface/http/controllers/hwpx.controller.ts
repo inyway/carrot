@@ -49,7 +49,7 @@ export class HwpxController {
   }
 
   /**
-   * Excel 파일 컬럼 정보 조회
+   * Excel 파일 컬럼 정보 조회 (HeaderDetectionAgent 사용)
    * POST /api/hwpx/excel-columns
    */
   @Post('excel-columns')
@@ -68,12 +68,21 @@ export class HwpxController {
     const sheets = await this.hwpxGeneratorService.getExcelSheets(excelFile.buffer);
 
     const targetSheet = sheetName || sheets[0];
-    const columns = await this.hwpxGeneratorService.getExcelColumns(
+    const result = await this.hwpxGeneratorService.getExcelColumnsWithAnalysis(
       excelFile.buffer,
       targetSheet,
     );
 
-    return { sheets, columns };
+    return {
+      sheets,
+      columns: result.columns,
+      hierarchicalColumns: result.hierarchicalColumns,
+      headerAnalysis: {
+        headerRows: result.headerAnalysis.headerRows,
+        dataStartRow: result.headerAnalysis.dataStartRow,
+        metaInfo: result.headerAnalysis.metaInfo,
+      },
+    };
   }
 
   /**
@@ -93,6 +102,7 @@ export class HwpxController {
     @Body('sheetName') sheetName: string,
     @Body('mappings') mappingsRaw: string,
     @Body('fileNameColumn') fileNameColumn: string | undefined,
+    @Body('mappingContext') mappingContextRaw: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
     if (!files.template || files.template.length === 0) {
@@ -111,6 +121,20 @@ export class HwpxController {
       throw new BadRequestException('mappings 형식이 올바르지 않습니다.');
     }
 
+    // mappingContext JSON 파싱 (선택사항)
+    let mappingContext: MappingContextDto | undefined;
+    if (mappingContextRaw) {
+      try {
+        mappingContext = JSON.parse(mappingContextRaw);
+        console.log('[HwpxController] MappingContext provided:', {
+          hasDescription: !!mappingContext?.description,
+          fieldRelationsCount: mappingContext?.fieldRelations?.length || 0,
+        });
+      } catch {
+        console.warn('[HwpxController] Failed to parse mappingContext, ignoring');
+      }
+    }
+
     const templateFile = files.template[0];
     const excelFile = files.excel[0];
 
@@ -120,6 +144,7 @@ export class HwpxController {
       sheetName,
       mappings,
       fileNameColumn,
+      mappingContext,
     });
 
     // ZIP 파일로 응답
@@ -206,6 +231,13 @@ export class HwpxController {
     }
 
     try {
+      // Excel 컬럼 정보 먼저 가져오기 (후처리용)
+      const excelColumnsResult = await this.hwpxGeneratorService.getExcelColumnsWithAnalysis(
+        excelFile.buffer,
+        targetSheetName,
+      );
+      const excelColumns = excelColumnsResult.columns;
+
       const result = await this.hwpxGeneratorService.generateAiMappings(
         templateFile.buffer,
         excelFile.buffer,
@@ -221,8 +253,16 @@ export class HwpxController {
         suggestions: result.validationResult.suggestions.length,
       });
 
+      // 후처리: 누락된 회차 매핑 자동 추가
+      const enhancedMappings = this.enhanceMappingsWithSessions(
+        result.mappings,
+        excelColumns,
+      );
+
+      console.log('[HwpxController] Enhanced mappings:', enhancedMappings.length, '(original:', result.mappings.length, ')');
+
       return {
-        mappings: result.mappings.map(m => ({
+        mappings: enhancedMappings.map(m => ({
           excelColumn: m.excelColumn,
           hwpxRow: m.hwpxRow,
           hwpxCol: m.hwpxCol,
@@ -296,5 +336,60 @@ export class HwpxController {
       console.error('[HwpxController] Validation error:', error);
       throw error;
     }
+  }
+
+  /**
+   * 회차 패턴 기반 매핑 자동 보완
+   * AI가 1회만 매핑한 경우, 동일 행의 2회~7회를 자동으로 추가
+   */
+  private enhanceMappingsWithSessions(
+    mappings: Array<{ excelColumn: string; hwpxRow: number; hwpxCol: number }>,
+    excelColumns: string[],
+  ): Array<{ excelColumn: string; hwpxRow: number; hwpxCol: number }> {
+    const enhanced = [...mappings];
+    const existingKeys = new Set(mappings.map(m => `${m.hwpxRow}-${m.hwpxCol}`));
+
+    // HWPX 템플릿의 회차별 컬럼 인덱스 패턴 (개인이력카드 기준)
+    // 1회: Col 2, 2회: Col 3, 3회: Col 5, 4회: Col 9, 5회: Col 10, 6회: Col 13, 7회: Col 15
+    const sessionColMap: Record<string, number> = {
+      '1회': 2,
+      '2회': 3,
+      '3회': 5,
+      '4회': 9,
+      '5회': 10,
+      '6회': 13,
+      '7회': 15,
+    };
+
+    // 1회 매핑된 항목 찾기
+    const session1Mappings = mappings.filter(m => m.excelColumn.endsWith('_1회'));
+
+    for (const mapping of session1Mappings) {
+      // 기본 이름 추출 (예: "4. 프로그램 참여현황_전문가 컨설팅_1회" -> "4. 프로그램 참여현황_전문가 컨설팅")
+      const baseName = mapping.excelColumn.replace(/_1회$/, '');
+
+      // 2회~7회 매핑 추가
+      for (let session = 2; session <= 7; session++) {
+        const sessionKey = `${session}회`;
+        const excelColName = `${baseName}_${sessionKey}`;
+        const hwpxCol = sessionColMap[sessionKey];
+
+        // Excel 컬럼이 존재하고, 아직 매핑되지 않은 경우만 추가
+        if (excelColumns.includes(excelColName)) {
+          const key = `${mapping.hwpxRow}-${hwpxCol}`;
+          if (!existingKeys.has(key)) {
+            enhanced.push({
+              excelColumn: excelColName,
+              hwpxRow: mapping.hwpxRow,
+              hwpxCol: hwpxCol,
+            });
+            existingKeys.add(key);
+            console.log(`[HwpxController] Auto-added: ${excelColName} -> Row ${mapping.hwpxRow}, Col ${hwpxCol}`);
+          }
+        }
+      }
+    }
+
+    return enhanced;
   }
 }
