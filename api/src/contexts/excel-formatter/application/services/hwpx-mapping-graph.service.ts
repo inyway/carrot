@@ -459,7 +459,8 @@ export class HwpxMappingGraphService {
 
     // 분기별 취업현황 특수 매핑 규칙
     // HWPX 구조: Row 17 = 헤더(2분기/3분기/4분기), Row 18-20 = 데이터
-    // Excel 컬럼: "N분기_취업여부", "N분기_취업처", "N분기_담당직무"
+    // Excel 컬럼: "5. 취업현황_N분기_취업여부" 또는 "N분기_취업여부" 형태
+    // 패턴 수정: 계층적 컬럼명 지원 (HeaderDetectionAgent가 생성하는 형태)
     const quarterMappingRules: Array<{
       pattern: RegExp;
       field: string;
@@ -467,44 +468,56 @@ export class HwpxMappingGraphService {
       hwpxRow: number;
       hwpxCol: number;
     }> = [
-      // 취업여부 (Row 18)
-      { pattern: /^2분기[_\s]?취업여부$/, field: '취업여부', quarter: '2분기', hwpxRow: 18, hwpxCol: 2 },
-      { pattern: /^3분기[_\s]?취업여부$/, field: '취업여부', quarter: '3분기', hwpxRow: 18, hwpxCol: 6 },
-      { pattern: /^4분기[_\s]?취업여부$/, field: '취업여부', quarter: '4분기', hwpxRow: 18, hwpxCol: 11 },
+      // 취업여부 (Row 18) - "5. 취업현황_2분기_취업여부" 또는 "2분기_취업여부" 형태 지원
+      { pattern: /(?:취업현황[_\s]*)?2분기[_\s]*취업여부/i, field: '취업여부', quarter: '2분기', hwpxRow: 18, hwpxCol: 2 },
+      { pattern: /(?:취업현황[_\s]*)?3분기[_\s]*취업여부/i, field: '취업여부', quarter: '3분기', hwpxRow: 18, hwpxCol: 6 },
+      { pattern: /(?:취업현황[_\s]*)?4분기[_\s]*취업여부/i, field: '취업여부', quarter: '4분기', hwpxRow: 18, hwpxCol: 11 },
       // 취업처 (Row 19)
-      { pattern: /^2분기[_\s]?취업처$/, field: '취업처', quarter: '2분기', hwpxRow: 19, hwpxCol: 2 },
-      { pattern: /^3분기[_\s]?취업처$/, field: '취업처', quarter: '3분기', hwpxRow: 19, hwpxCol: 6 },
-      { pattern: /^4분기[_\s]?취업처$/, field: '취업처', quarter: '4분기', hwpxRow: 19, hwpxCol: 11 },
+      { pattern: /(?:취업현황[_\s]*)?2분기[_\s]*취업처/i, field: '취업처', quarter: '2분기', hwpxRow: 19, hwpxCol: 2 },
+      { pattern: /(?:취업현황[_\s]*)?3분기[_\s]*취업처/i, field: '취업처', quarter: '3분기', hwpxRow: 19, hwpxCol: 6 },
+      { pattern: /(?:취업현황[_\s]*)?4분기[_\s]*취업처/i, field: '취업처', quarter: '4분기', hwpxRow: 19, hwpxCol: 11 },
       // 담당직무 (Row 20)
-      { pattern: /^2분기[_\s]?담당직무$/, field: '담당직무', quarter: '2분기', hwpxRow: 20, hwpxCol: 2 },
-      { pattern: /^3분기[_\s]?담당직무$/, field: '담당직무', quarter: '3분기', hwpxRow: 20, hwpxCol: 6 },
-      { pattern: /^4분기[_\s]?담당직무$/, field: '담당직무', quarter: '4분기', hwpxRow: 20, hwpxCol: 11 },
+      { pattern: /(?:취업현황[_\s]*)?2분기[_\s]*담당직무/i, field: '담당직무', quarter: '2분기', hwpxRow: 20, hwpxCol: 2 },
+      { pattern: /(?:취업현황[_\s]*)?3분기[_\s]*담당직무/i, field: '담당직무', quarter: '3분기', hwpxRow: 20, hwpxCol: 6 },
+      { pattern: /(?:취업현황[_\s]*)?4분기[_\s]*담당직무/i, field: '담당직무', quarter: '4분기', hwpxRow: 20, hwpxCol: 11 },
       // 근무형태 - Excel에만 있는 필드 (3분기, 4분기)
       // 참고: HWPX에는 근무형태 셀이 없을 수 있음. 필요시 담당직무 행 아래에 매핑
     ];
 
-    // 전문가 컨설팅 / 실전모의면접 회차별 매핑 규칙
-    // HWPX 구조 (스크린샷 기반):
+    // 프로그램 참여현황 회차별 매핑 규칙
+    // HWPX 구조 (개인이력카드 기반):
+    // - Row 13: 핵심 세미나(전문가 강연) 데이터 - Col2~Col7 (1회~7회)
     // - Row 14: 전문가 컨설팅 데이터 - Col2(1회), Col3(2회), Col5(3회)
     // - Row 15: 실전모의면접 데이터 - Col7(1회), Col8(2회), Col9(3회), Col10(4회), Col11(5회), Col13(6회)
-    // Excel 컬럼명: "전문가 컨설팅_1회", "실전모의면접_1회" 형태
+    // Excel 컬럼명: "4. 프로그램 참여현황_전문가 강연_1회" 형태 (HeaderDetectionAgent 생성)
+    // 패턴 수정: 계층적 컬럼명 지원
     const sessionMappingRules: Array<{
       pattern: RegExp;
       label: string;
       hwpxRow: number;
       hwpxCol: number;
     }> = [
+      // 핵심 세미나 = 전문가 강연 (Row 13) - 1회~7회
+      // Excel: "4. 프로그램 참여현황_전문가 강연_1회" → HWPX: "핵심 세미나" 행
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?전문가\s?강연[_\s]*1회/i, label: '핵심 세미나 1회', hwpxRow: 13, hwpxCol: 2 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?전문가\s?강연[_\s]*2회/i, label: '핵심 세미나 2회', hwpxRow: 13, hwpxCol: 3 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?전문가\s?강연[_\s]*3회/i, label: '핵심 세미나 3회', hwpxRow: 13, hwpxCol: 4 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?전문가\s?강연[_\s]*4회/i, label: '핵심 세미나 4회', hwpxRow: 13, hwpxCol: 5 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?전문가\s?강연[_\s]*5회/i, label: '핵심 세미나 5회', hwpxRow: 13, hwpxCol: 6 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?전문가\s?강연[_\s]*6회/i, label: '핵심 세미나 6회', hwpxRow: 13, hwpxCol: 7 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?전문가\s?강연[_\s]*7회/i, label: '핵심 세미나 7회', hwpxRow: 13, hwpxCol: 8 },
       // 전문가 컨설팅 (Row 14) - 1회, 2회, 3회
-      { pattern: /^전문가\s?컨설팅[_\s]1회$/, label: '전문가 컨설팅 1회', hwpxRow: 14, hwpxCol: 2 },
-      { pattern: /^전문가\s?컨설팅[_\s]2회$/, label: '전문가 컨설팅 2회', hwpxRow: 14, hwpxCol: 3 },
-      { pattern: /^전문가\s?컨설팅[_\s]3회$/, label: '전문가 컨설팅 3회', hwpxRow: 14, hwpxCol: 5 },
+      // "4. 프로그램 참여현황_전문가 컨설팅_1회" 또는 "전문가 컨설팅_1회" 형태 지원
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?전문가\s?컨설팅[_\s]*1회/i, label: '전문가 컨설팅 1회', hwpxRow: 14, hwpxCol: 2 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?전문가\s?컨설팅[_\s]*2회/i, label: '전문가 컨설팅 2회', hwpxRow: 14, hwpxCol: 3 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?전문가\s?컨설팅[_\s]*3회/i, label: '전문가 컨설팅 3회', hwpxRow: 14, hwpxCol: 5 },
       // 실전모의면접 (Row 15) - 1회~6회
-      { pattern: /^실전\s?모의\s?면접[_\s]1회$/, label: '실전모의면접 1회', hwpxRow: 15, hwpxCol: 7 },
-      { pattern: /^실전\s?모의\s?면접[_\s]2회$/, label: '실전모의면접 2회', hwpxRow: 15, hwpxCol: 8 },
-      { pattern: /^실전\s?모의\s?면접[_\s]3회$/, label: '실전모의면접 3회', hwpxRow: 15, hwpxCol: 9 },
-      { pattern: /^실전\s?모의\s?면접[_\s]4회$/, label: '실전모의면접 4회', hwpxRow: 15, hwpxCol: 10 },
-      { pattern: /^실전\s?모의\s?면접[_\s]5회$/, label: '실전모의면접 5회', hwpxRow: 15, hwpxCol: 11 },
-      { pattern: /^실전\s?모의\s?면접[_\s]6회$/, label: '실전모의면접 6회', hwpxRow: 15, hwpxCol: 13 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?실전\s?모의\s?면접[_\s]*1회/i, label: '실전모의면접 1회', hwpxRow: 15, hwpxCol: 7 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?실전\s?모의\s?면접[_\s]*2회/i, label: '실전모의면접 2회', hwpxRow: 15, hwpxCol: 8 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?실전\s?모의\s?면접[_\s]*3회/i, label: '실전모의면접 3회', hwpxRow: 15, hwpxCol: 9 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?실전\s?모의\s?면접[_\s]*4회/i, label: '실전모의면접 4회', hwpxRow: 15, hwpxCol: 10 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?실전\s?모의\s?면접[_\s]*5회/i, label: '실전모의면접 5회', hwpxRow: 15, hwpxCol: 11 },
+      { pattern: /(?:프로그램\s*참여현황[_\s]*)?실전\s?모의\s?면접[_\s]*6회/i, label: '실전모의면접 6회', hwpxRow: 15, hwpxCol: 13 },
     ];
 
     // 분기별 매핑 먼저 처리
