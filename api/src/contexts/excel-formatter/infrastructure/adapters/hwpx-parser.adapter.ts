@@ -297,18 +297,30 @@ export class HwpxParserAdapter {
 
     console.log(`[fillTemplate] Processing ${mappings.length} mappings for data row`);
 
-    // 매핑에 따라 셀 값 교체
+    // 1. 먼저 모든 매핑 대상 셀을 빈 값으로 초기화 (템플릿 기존값 제거)
+    const allCellPositions = new Set<string>();
+    for (const mapping of mappings) {
+      allCellPositions.add(`${mapping.hwpxRow}-${mapping.hwpxCol}`);
+    }
+    for (const pos of allCellPositions) {
+      const [row, col] = pos.split('-').map(Number);
+      xmlContent = this.replaceCellText(xmlContent, row, col, '');
+    }
+
+    // 2. 실제 데이터가 있는 셀만 값 입력
     for (const mapping of mappings) {
       const value = data[mapping.excelColumn] || '';
-      if (mapping.hwpxRow <= 10 && value) {
-        console.log(`[fillTemplate] Mapping "${mapping.excelColumn}" → [${mapping.hwpxRow},${mapping.hwpxCol}] = "${value.substring(0, 20)}${value.length > 20 ? '...' : ''}"`);
+      if (value) {  // 빈 값이 아닐 때만 교체 (이미 초기화됨)
+        if (mapping.hwpxRow <= 10) {
+          console.log(`[fillTemplate] Mapping "${mapping.excelColumn}" → [${mapping.hwpxRow},${mapping.hwpxCol}] = "${value.substring(0, 20)}${value.length > 20 ? '...' : ''}"`);
+        }
+        xmlContent = this.replaceCellText(
+          xmlContent,
+          mapping.hwpxRow,
+          mapping.hwpxCol,
+          value,
+        );
       }
-      xmlContent = this.replaceCellText(
-        xmlContent,
-        mapping.hwpxRow,
-        mapping.hwpxCol,
-        value,
-      );
     }
 
     // 수정된 XML을 ZIP에 업데이트

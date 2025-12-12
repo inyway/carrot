@@ -21,8 +21,15 @@ import {
   HwpxGeneratorService,
   HwpxMappingGraphService,
   UnifiedGeneratorService,
+  VerificationGraphService,
 } from './application/services';
-import { HeaderDetectionAgent, OrchestratorAgent } from './application/agents';
+import {
+  HeaderDetectionAgent,
+  OrchestratorAgent,
+  ValueMatchAgent,
+  TemplateLeakAgent,
+  PatternAgent,
+} from './application/agents';
 import {
   GeminiAiMappingAdapter,
   ExceljsParserAdapter,
@@ -64,10 +71,14 @@ import {
     HwpxGeneratorService,
     HwpxMappingGraphService,
     UnifiedGeneratorService,
+    VerificationGraphService,
     HwpxParserAdapter,
     GeminiAiMappingAdapter,
     HeaderDetectionAgent,
     OrchestratorAgent,
+    ValueMatchAgent,
+    TemplateLeakAgent,
+    PatternAgent,
     {
       provide: AI_MAPPING_PORT,
       useClass: GeminiAiMappingAdapter,

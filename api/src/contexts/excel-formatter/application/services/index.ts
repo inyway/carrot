@@ -7,6 +7,7 @@ export * from './mapping-profile.service';
 export * from './hwpx-generator.service';
 export { HwpxMappingGraphService } from './hwpx-mapping-graph.service';
 export { UnifiedGeneratorService } from './unified-generator.service';
+export { VerificationGraphService } from './verification-graph.service';
 export type {
   MappingItem,
   CellMapping,

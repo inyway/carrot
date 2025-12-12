@@ -5,8 +5,16 @@ import {
   type CellMapping,
 } from '../../infrastructure/adapters/hwpx-parser.adapter';
 import { HwpxMappingGraphService, type MappingContext } from './hwpx-mapping-graph.service';
+import { VerificationGraphService } from './verification-graph.service';
 import { EXCEL_PARSER_PORT, type ExcelParserPort } from '../ports';
-import { HeaderDetectionAgent, type HeaderAnalysisResult, type HierarchicalColumn } from '../agents';
+import {
+  HeaderDetectionAgent,
+  type HeaderAnalysisResult,
+  type HierarchicalColumn,
+  type VerificationInput,
+  type VerificationResult,
+  type VerificationOptions,
+} from '../agents';
 
 export interface HwpxGenerateOptions {
   templateBuffer: Buffer;
@@ -79,6 +87,7 @@ export class HwpxGeneratorService {
   constructor(
     private readonly hwpxParser: HwpxParserAdapter,
     private readonly mappingGraphService: HwpxMappingGraphService,
+    private readonly verificationGraphService: VerificationGraphService,
     private readonly headerDetectionAgent: HeaderDetectionAgent,
     @Inject(EXCEL_PARSER_PORT)
     private readonly excelParser: ExcelParserPort,
@@ -833,5 +842,51 @@ export class HwpxGeneratorService {
     }
 
     return String(value);
+  }
+
+  /**
+   * 3-Way 검증 실행
+   * Template ↔ Excel ↔ Generated HWPX 비교 검증
+   *
+   * @param templateBuffer - 템플릿 HWPX 파일
+   * @param excelBuffer - 원본 Excel 데이터
+   * @param generatedZipBuffer - 생성된 HWPX 파일들 (ZIP)
+   * @param mappings - 사용된 매핑 규칙
+   * @param options - 검증 옵션 (샘플링 전략 등)
+   */
+  async verifyGenerated(
+    templateBuffer: Buffer,
+    excelBuffer: Buffer,
+    generatedZipBuffer: Buffer,
+    mappings: CellMapping[],
+    sheetName?: string,
+    options?: VerificationOptions,
+  ): Promise<VerificationResult> {
+    console.log('[HwpxGeneratorService] Starting 3-Way verification...');
+    console.log('[HwpxGeneratorService] Mappings count:', mappings.length);
+
+    const input: VerificationInput = {
+      templateBuffer,
+      excelBuffer,
+      generatedZipBuffer,
+      mappings: mappings.map((m) => ({
+        excelColumn: m.excelColumn,
+        hwpxRow: m.hwpxRow,
+        hwpxCol: m.hwpxCol,
+      })),
+      sheetName,
+      options,
+    };
+
+    const result = await this.verificationGraphService.execute(input);
+
+    console.log('[HwpxGeneratorService] Verification complete:', {
+      status: result.status,
+      accuracy: result.accuracy.toFixed(1) + '%',
+      sampledCount: result.sampledCount,
+      totalIssues: result.allIssues.length,
+    });
+
+    return result;
   }
 }
