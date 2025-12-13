@@ -98,6 +98,47 @@ interface ValidationResult {
   suggestions: ValidationSuggestion[];
 }
 
+// 3-Way Diff 검증 결과 타입
+interface VerificationIssue {
+  personName: string;
+  personIndex: number;
+  cell: {
+    hwpxRow: number;
+    hwpxCol: number;
+    fieldName: string;
+    excelColumn: string;
+    templateValue: string;
+    excelValue: string;
+    generatedValue: string;
+    status: 'match' | 'mismatch' | 'template_leak' | 'missing' | 'empty_ok';
+  };
+  severity: 'critical' | 'warning' | 'info';
+  message: string;
+  agentName: string;
+}
+
+interface VerificationAgentResult {
+  agentName: string;
+  description: string;
+  status: 'pass' | 'warning' | 'fail';
+  issueCount: number;
+  issues: VerificationIssue[];
+  executionTimeMs: number;
+}
+
+interface VerificationResult {
+  success?: boolean;
+  status: 'pass' | 'warning' | 'fail';
+  sampledCount: number;
+  totalCount: number;
+  sampledNames: string[];
+  accuracy: number;
+  agentResults: VerificationAgentResult[];
+  allIssues: VerificationIssue[];
+  aiSummary: string;
+  totalExecutionTimeMs: number;
+}
+
 // 포맷별 아이콘 색상
 const FORMAT_COLORS: Record<string, string> = {
   xlsx: 'bg-green-100 text-green-600',
@@ -163,15 +204,24 @@ export default function ConverterPage() {
   // 미리보기 데이터
   const [previewData, setPreviewData] = useState<Record<string, unknown>[] | null>(null);
 
-  // 검증 상태
+  // 매핑 검증 상태 (AI 매핑 시 사용)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [validating, setValidating] = useState(false);
+
+  // 3-Way Diff 검증 상태
+  const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [generatedZipBlob, setGeneratedZipBlob] = useState<Blob | null>(null);
+  const [lastHwpxMappings, setLastHwpxMappings] = useState<Array<{ excelColumn: string; hwpxRow: number; hwpxCol: number }>>([]);
 
   // 매핑 컨텍스트 (AI 매핑에 참고할 도메인 정보)
   const [mappingContext, setMappingContext] = useState<MappingContext | null>(null);
 
   // 진행률 상태
   const [progress, setProgress] = useState<ProgressInfo | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   // 템플릿 파일 선택
@@ -420,7 +470,8 @@ export default function ConverterPage() {
     return null;
   };
 
-  // 제안된 매핑 적용
+  // 제안된 매핑 적용 (향후 UI에서 사용 예정)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const applySuggestions = (suggestions: { excelColumn: string; hwpxRow: number; hwpxCol: number }[]) => {
     const newMappings: MappingItem[] = [
       ...mappings,
@@ -586,6 +637,73 @@ export default function ConverterPage() {
     });
   };
 
+  // 3-Way Diff 검증 실행 (결과 반환)
+  const runVerification = async (
+    zipBlob: Blob,
+    mappingsToVerify: Array<{ excelColumn: string; hwpxRow: number; hwpxCol: number }>,
+    showAlert = true
+  ): Promise<VerificationResult | null> => {
+    if (!templateFile || !dataFile) return null;
+
+    setVerifying(true);
+    setVerificationResult(null);
+
+    try {
+      const verifyFormData = new FormData();
+      verifyFormData.append('template', templateFile.file);
+      verifyFormData.append('excel', dataFile.file);
+      verifyFormData.append('generatedZip', zipBlob, 'generated.zip');
+      verifyFormData.append('mappings', JSON.stringify(mappingsToVerify));
+      if (dataFile.selectedSheet) {
+        verifyFormData.append('sheetName', dataFile.selectedSheet);
+      }
+
+      console.log('[Converter] Running 3-Way verification...');
+      const verifyRes = await fetch('/api/hwpx/verify', {
+        method: 'POST',
+        body: verifyFormData,
+      });
+
+      if (verifyRes.ok) {
+        const result: VerificationResult = await verifyRes.json();
+        console.log('[Converter] Verification result:', {
+          status: result.status,
+          accuracy: result.accuracy?.toFixed?.(1) + '%',
+          issueCount: result.allIssues?.length || 0,
+        });
+        setVerificationResult(result);
+
+        // 검증 완료 알림
+        if (showAlert) {
+          if (result.status === 'pass') {
+            alert(`✅ 검증 통과!\n정확도: ${result.accuracy.toFixed(1)}%\n파일이 다운로드되었습니다.`);
+          } else if (result.status === 'warning') {
+            alert(`⚠️ 경고: ${result.allIssues.length}건의 이슈가 발견되었습니다.\n정확도: ${result.accuracy.toFixed(1)}%\n파일이 다운로드되었습니다. 결과를 확인해주세요.`);
+          } else {
+            alert(`❌ 검증 실패: Critical 이슈가 발견되었습니다.\n정확도: ${result.accuracy.toFixed(1)}%\n파일이 다운로드되었습니다. 반드시 확인이 필요합니다.`);
+          }
+        }
+
+        return result;
+      } else {
+        const errorText = await verifyRes.text();
+        console.error('[Converter] Verification failed:', errorText);
+        if (showAlert) {
+          alert('검증 API 호출 실패. 파일은 다운로드되었습니다.');
+        }
+        return null;
+      }
+    } catch (error) {
+      console.error('[Converter] Verification error:', error);
+      if (showAlert) {
+        alert('검증 중 오류가 발생했습니다. 파일은 다운로드되었습니다.');
+      }
+      return null;
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   // 보고서 생성 - 간단한 동기식 API 사용 (HWPX와 동일한 방식)
   const handleGenerate = async () => {
     // 디버깅용 로그
@@ -611,6 +729,8 @@ export default function ConverterPage() {
     }
 
     setGenerating(true);
+    setVerificationResult(null);
+    setGeneratedZipBlob(null);
     setProgress({ phase: 'init', current: 0, total: 0, percentage: 0, message: '보고서 생성 중...' });
 
     try {
@@ -628,15 +748,15 @@ export default function ConverterPage() {
       }
 
       // 매핑 형식 변환 (템플릿 형식에 따라)
-      let mappingsToSend;
+      let mappingsToSend: Array<{ excelColumn: string; hwpxRow: number; hwpxCol: number }> | Array<{ templateField: string; dataColumn: string }>;
       if (templateFile.format === 'hwpx') {
         // HWPX: 셀 위치 기반 매핑
         mappingsToSend = mappings
           .filter(m => m.hwpxRow !== undefined && m.hwpxCol !== undefined)
           .map(m => ({
             excelColumn: m.dataColumn,
-            hwpxRow: m.hwpxRow,
-            hwpxCol: m.hwpxCol,
+            hwpxRow: m.hwpxRow!,
+            hwpxCol: m.hwpxCol!,
           }));
       } else {
         // Excel/CSV: 필드명 기반 매핑
@@ -670,7 +790,7 @@ export default function ConverterPage() {
         throw new Error(errorText || '보고서 생성 실패');
       }
 
-      // 결과 다운로드
+      // 결과 Blob 저장
       const blob = await res.blob();
       const contentDisposition = res.headers.get('Content-Disposition');
       let fileName = `reports_${Date.now()}`;
@@ -688,10 +808,32 @@ export default function ConverterPage() {
             : `reports_${Date.now()}.zip`;
       }
 
-      // 다운로드 실행
-      downloadBlob(blob, fileName);
-      setProgress({ phase: 'complete', current: 100, total: 100, percentage: 100, message: '완료!' });
-      alert('보고서 생성이 완료되었습니다!');
+      setProgress({ phase: 'complete', current: 100, total: 100, percentage: 100, message: '생성 완료! 검증 중...' });
+
+      // HWPX 템플릿인 경우에만 3-Way 검증 실행
+      if (templateFile.format === 'hwpx') {
+        setGeneratedZipBlob(blob);
+
+        // HWPX 매핑으로 변환 및 저장 (재검증용)
+        const hwpxMappings = mappings
+          .filter(m => m.hwpxRow !== undefined && m.hwpxCol !== undefined)
+          .map(m => ({
+            excelColumn: m.dataColumn,
+            hwpxRow: m.hwpxRow!,
+            hwpxCol: m.hwpxCol!,
+          }));
+        setLastHwpxMappings(hwpxMappings);
+
+        // 먼저 다운로드 실행
+        downloadBlob(blob, fileName);
+
+        // 검증 실행 (다운로드 후)
+        await runVerification(blob, hwpxMappings);
+      } else {
+        // HWPX가 아닌 경우 바로 다운로드
+        downloadBlob(blob, fileName);
+        alert('보고서 생성이 완료되었습니다!');
+      }
 
     } catch (error) {
       console.error('Generate error:', error);
@@ -1244,6 +1386,189 @@ export default function ConverterPage() {
                         처리 중: {progress.currentFile}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* 검증 진행 중 표시 */}
+                {verifying && (
+                  <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">
+                    <div className="flex items-center gap-3">
+                      <svg className="animate-spin h-5 w-5 text-blue-600" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      <div>
+                        <p className="font-medium text-blue-800">3-Way Diff 검증 중...</p>
+                        <p className="text-sm text-blue-600">생성된 파일을 원본 데이터와 비교하고 있습니다</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3-Way Diff 검증 결과 표시 */}
+                {verificationResult && (
+                  <div className={`rounded-xl border p-4 space-y-4 ${
+                    verificationResult.status === 'pass'
+                      ? 'bg-green-50 border-green-200'
+                      : verificationResult.status === 'warning'
+                        ? 'bg-yellow-50 border-yellow-200'
+                        : 'bg-red-50 border-red-200'
+                  }`}>
+                    {/* 헤더 */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {verificationResult.status === 'pass' ? (
+                          <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        ) : verificationResult.status === 'warning' ? (
+                          <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        )}
+                        <span className={`font-semibold ${
+                          verificationResult.status === 'pass'
+                            ? 'text-green-800'
+                            : verificationResult.status === 'warning'
+                              ? 'text-yellow-800'
+                              : 'text-red-800'
+                        }`}>
+                          {verificationResult.status === 'pass' ? '검증 통과' :
+                           verificationResult.status === 'warning' ? '경고 발생' : '검증 실패'}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-2xl font-bold ${
+                          verificationResult.accuracy >= 95 ? 'text-green-600' :
+                          verificationResult.accuracy >= 80 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {verificationResult.accuracy.toFixed(1)}%
+                        </div>
+                        <div className="text-xs text-gray-500">정확도</div>
+                      </div>
+                    </div>
+
+                    {/* 요약 정보 */}
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div className="bg-white rounded-lg p-2 border border-gray-100">
+                        <div className="text-lg font-semibold text-gray-800">{verificationResult.sampledCount}</div>
+                        <div className="text-xs text-gray-500">검증 샘플</div>
+                      </div>
+                      <div className="bg-white rounded-lg p-2 border border-gray-100">
+                        <div className="text-lg font-semibold text-gray-800">{verificationResult.totalCount}</div>
+                        <div className="text-xs text-gray-500">전체 건수</div>
+                      </div>
+                      <div className="bg-white rounded-lg p-2 border border-gray-100">
+                        <div className={`text-lg font-semibold ${
+                          verificationResult.allIssues.length === 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {verificationResult.allIssues.length}
+                        </div>
+                        <div className="text-xs text-gray-500">이슈 수</div>
+                      </div>
+                    </div>
+
+                    {/* AI 요약 */}
+                    {verificationResult.aiSummary && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-100">
+                        <p className="text-sm text-gray-700">{verificationResult.aiSummary}</p>
+                      </div>
+                    )}
+
+                    {/* Agent별 결과 */}
+                    {verificationResult.agentResults && verificationResult.agentResults.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-gray-700">검증 Agent 결과:</p>
+                        <div className="space-y-1">
+                          {verificationResult.agentResults.map((agent, idx) => (
+                            <div key={idx} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-gray-100">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${
+                                  agent.status === 'pass' ? 'bg-green-500' :
+                                  agent.status === 'warning' ? 'bg-yellow-500' : 'bg-red-500'
+                                }`} />
+                                <span className="text-sm text-gray-700">{agent.description}</span>
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                {agent.issueCount > 0 ? `${agent.issueCount}건` : '통과'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 이슈 상세 (Critical/Warning만 표시) */}
+                    {verificationResult.allIssues.filter(i => i.severity !== 'info').length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-gray-700">주요 이슈:</p>
+                        <div className="max-h-40 overflow-y-auto space-y-1">
+                          {verificationResult.allIssues
+                            .filter(i => i.severity !== 'info')
+                            .slice(0, 10)
+                            .map((issue, idx) => (
+                              <div key={idx} className={`text-xs p-2 rounded ${
+                                issue.severity === 'critical' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                <span className="font-medium">[{issue.personName}]</span> {issue.message}
+                              </div>
+                            ))}
+                          {verificationResult.allIssues.filter(i => i.severity !== 'info').length > 10 && (
+                            <p className="text-xs text-gray-500 text-center">
+                              ... 외 {verificationResult.allIssues.filter(i => i.severity !== 'info').length - 10}건
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 재검증 버튼 */}
+                    {generatedZipBlob && lastHwpxMappings.length > 0 && (
+                      <button
+                        onClick={() => runVerification(generatedZipBlob, lastHwpxMappings, false)}
+                        disabled={verifying}
+                        className="w-full px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {verifying ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            재검증 중...
+                          </>
+                        ) : (
+                          <>🔄 재검증 실행</>
+                        )}
+                      </button>
+                    )}
+
+                    {/* 샘플링 상세 보기 */}
+                    {verificationResult.sampledNames && verificationResult.sampledNames.length > 0 && (
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+                          📋 샘플링된 대상자 보기 ({verificationResult.sampledNames.length}명)
+                        </summary>
+                        <div className="mt-2 p-2 bg-gray-50 rounded max-h-32 overflow-y-auto">
+                          <div className="flex flex-wrap gap-1">
+                            {verificationResult.sampledNames.map((name, idx) => (
+                              <span key={idx} className="px-2 py-0.5 bg-white border border-gray-200 rounded text-gray-600">
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </details>
+                    )}
+
+                    {/* 실행 시간 */}
+                    <div className="text-xs text-gray-400 text-right">
+                      검증 소요 시간: {(verificationResult.totalExecutionTimeMs / 1000).toFixed(1)}초
+                    </div>
                   </div>
                 )}
               </div>

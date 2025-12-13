@@ -11,6 +11,7 @@ import {
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { HwpxGeneratorService } from '../../../application/services/hwpx-generator.service';
+import { VerificationGraphService } from '../../../application/services/verification-graph.service';
 import {
   HwpxAnalyzeResponseDto,
   ExcelColumnsResponseDto,
@@ -19,10 +20,14 @@ import {
   AiMappingResponseDto,
   MappingContextDto,
 } from '../dto/hwpx.dto';
+import { VerificationResult } from '../../../application/agents/verification/types';
 
 @Controller('hwpx')
 export class HwpxController {
-  constructor(private readonly hwpxGeneratorService: HwpxGeneratorService) {}
+  constructor(
+    private readonly hwpxGeneratorService: HwpxGeneratorService,
+    private readonly verificationGraphService: VerificationGraphService,
+  ) {}
 
   /**
    * HWPX 템플릿 분석
@@ -391,5 +396,114 @@ export class HwpxController {
     }
 
     return enhanced;
+  }
+
+  /**
+   * 3-Way Diff 검증
+   * POST /api/hwpx/verify
+   *
+   * 생성된 HWPX 파일들을 템플릿 및 Excel 원본과 비교하여 검증
+   *
+   * @param template - HWPX 템플릿 파일
+   * @param excel - Excel 데이터 파일
+   * @param generatedZip - 생성된 HWPX ZIP 파일
+   * @param mappings - 매핑 정보 JSON
+   * @param sheetName - Excel 시트명 (선택)
+   * @param sampleSize - 검증할 샘플 수 (선택, 기본 자동)
+   */
+  @Post('verify')
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'template', maxCount: 1 },
+      { name: 'excel', maxCount: 1 },
+      { name: 'generatedZip', maxCount: 1 },
+    ]),
+  )
+  async verifyGenerated(
+    @UploadedFiles()
+    files: {
+      template?: Express.Multer.File[];
+      excel?: Express.Multer.File[];
+      generatedZip?: Express.Multer.File[];
+    },
+    @Body('mappings') mappingsRaw: string,
+    @Body('sheetName') sheetName?: string,
+    @Body('sampleSize') sampleSizeRaw?: string,
+  ): Promise<VerificationResult> {
+    console.log('[HwpxController] Verification request received');
+
+    if (!files.template || files.template.length === 0) {
+      throw new BadRequestException('HWPX 템플릿 파일이 필요합니다.');
+    }
+
+    if (!files.excel || files.excel.length === 0) {
+      throw new BadRequestException('Excel 데이터 파일이 필요합니다.');
+    }
+
+    if (!files.generatedZip || files.generatedZip.length === 0) {
+      throw new BadRequestException('생성된 ZIP 파일이 필요합니다.');
+    }
+
+    // mappings JSON 파싱
+    let mappings: Array<{ excelColumn: string; hwpxRow: number; hwpxCol: number }>;
+    try {
+      mappings = JSON.parse(mappingsRaw || '[]');
+    } catch {
+      throw new BadRequestException('mappings 형식이 올바르지 않습니다.');
+    }
+
+    if (mappings.length === 0) {
+      throw new BadRequestException('매핑 정보가 필요합니다.');
+    }
+
+    const templateFile = files.template[0];
+    const excelFile = files.excel[0];
+    const generatedZipFile = files.generatedZip[0];
+
+    // sheetName이 없으면 첫 번째 시트 사용
+    let targetSheetName = sheetName;
+    if (!targetSheetName) {
+      const sheets = await this.hwpxGeneratorService.getExcelSheets(excelFile.buffer);
+      targetSheetName = sheets[0];
+    }
+
+    // sampleSize 파싱
+    const sampleSize = sampleSizeRaw ? parseInt(sampleSizeRaw, 10) : undefined;
+
+    console.log('[HwpxController] Verification params:', {
+      templateSize: templateFile.size,
+      excelSize: excelFile.size,
+      generatedZipSize: generatedZipFile.size,
+      mappingsCount: mappings.length,
+      sheetName: targetSheetName,
+      sampleSize,
+    });
+
+    try {
+      const result = await this.verificationGraphService.execute({
+        templateBuffer: templateFile.buffer,
+        excelBuffer: excelFile.buffer,
+        generatedZipBuffer: generatedZipFile.buffer,
+        mappings,
+        sheetName: targetSheetName,
+        options: {
+          sampleStrategy: sampleSize ? 'first_n' : 'random',
+          sampleSize,
+        },
+      });
+
+      console.log('[HwpxController] Verification result:', {
+        status: result.status,
+        accuracy: result.accuracy.toFixed(1) + '%',
+        sampledCount: result.sampledCount,
+        totalCount: result.totalCount,
+        issueCount: result.allIssues.length,
+      });
+
+      return result;
+    } catch (error) {
+      console.error('[HwpxController] Verification error:', error);
+      throw error;
+    }
   }
 }
