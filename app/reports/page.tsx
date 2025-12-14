@@ -207,15 +207,7 @@ export default function ReportsPage() {
             </svg>
             <span>템플릿</span>
           </button>
-          <button
-            onClick={() => router.push('/hwpx')}
-            className="flex items-center gap-3 px-3 py-3 rounded-xl transition-all hover:bg-gray-100 text-gray-600"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-            </svg>
-            <span>HWPX 생성</span>
-          </button>
+          {/* HWPX 생성 메뉴 숨김 - converter에 통합됨 */}
           <button
             onClick={() => router.push('/converter')}
             className="flex items-center gap-3 px-3 py-3 rounded-xl transition-all hover:bg-gray-100 text-gray-600"
