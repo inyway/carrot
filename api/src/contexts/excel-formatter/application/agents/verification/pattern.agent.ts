@@ -14,7 +14,8 @@ export class PatternAgent extends BaseVerificationAgent {
   // 필드별 검증 패턴
   private readonly patterns: Record<string, { regex: RegExp; message: string }> = {
     연락처: {
-      regex: /^(\d{2,4}[-\s]?\d{3,4}[-\s]?\d{4})?$/,
+      // 다양한 전화번호 형식 지원: 010-1234-5678, (010) 1234-5678, 01012345678 등
+      regex: /^(\(?\d{2,4}\)?[-\s]?\d{3,4}[-\s]?\d{4})?$/,
       message: '전화번호 형식이 올바르지 않습니다 (예: 010-1234-5678)',
     },
     이메일: {

@@ -183,11 +183,26 @@ export default function ConverterPage() {
   // 템플릿/데이터 파일의 최신 값을 추적하는 ref (클로저 문제 해결)
   const templateFileRef = useRef<TemplateInfo | null>(null);
   const dataFileRef = useRef<FileInfo | null>(null);
+  const mappingsRef = useRef<MappingItem[]>([]);
 
   // 상태
   const [templateFile, setTemplateFile] = useState<TemplateInfo | null>(null);
   const [dataFile, setDataFile] = useState<FileInfo | null>(null);
-  const [mappings, setMappings] = useState<MappingItem[]>([]);
+  const [mappings, setMappingsState] = useState<MappingItem[]>([]);
+
+  // mappings 상태와 ref를 동시에 업데이트하는 래퍼 함수
+  const setMappings = (newMappings: MappingItem[] | ((prev: MappingItem[]) => MappingItem[])) => {
+    if (typeof newMappings === 'function') {
+      setMappingsState(prev => {
+        const result = newMappings(prev);
+        mappingsRef.current = result;
+        return result;
+      });
+    } else {
+      mappingsRef.current = newMappings;
+      setMappingsState(newMappings);
+    }
+  };
   const [fileNameColumn, setFileNameColumn] = useState<string>('');
 
   // 로딩 상태
@@ -722,12 +737,15 @@ export default function ConverterPage() {
     // ref에서 최신 값 참조 (클로저 문제 해결)
     const currentTemplateFile = templateFileRef.current || templateFile;
     const currentDataFile = dataFileRef.current || dataFile;
+    const currentMappings = mappingsRef.current.length > 0 ? mappingsRef.current : mappings;
 
     // 디버깅용 로그
     console.log('[Converter] handleGenerate called', {
       templateFile: currentTemplateFile?.name,
       dataFile: currentDataFile?.name,
-      mappingsCount: mappings.length,
+      mappingsCount: currentMappings.length,
+      mappingsRefCount: mappingsRef.current.length,
+      mappingsStateCount: mappings.length,
     });
 
     if (!currentTemplateFile) {
@@ -740,7 +758,7 @@ export default function ConverterPage() {
       return;
     }
 
-    if (mappings.length === 0) {
+    if (currentMappings.length === 0) {
       alert('컬럼 매핑을 설정해주세요. AI 자동 매핑 버튼을 클릭하거나 직접 매핑하세요.');
       return;
     }
@@ -768,7 +786,7 @@ export default function ConverterPage() {
       let mappingsToSend: Array<{ excelColumn: string; hwpxRow: number; hwpxCol: number }> | Array<{ templateField: string; dataColumn: string }>;
       if (currentTemplateFile.format === 'hwpx') {
         // HWPX: 셀 위치 기반 매핑
-        mappingsToSend = mappings
+        mappingsToSend = currentMappings
           .filter(m => m.hwpxRow !== undefined && m.hwpxCol !== undefined)
           .map(m => ({
             excelColumn: m.dataColumn,
@@ -777,7 +795,7 @@ export default function ConverterPage() {
           }));
       } else {
         // Excel/CSV: 필드명 기반 매핑
-        mappingsToSend = mappings.map(m => ({
+        mappingsToSend = currentMappings.map(m => ({
           templateField: m.templateField,
           dataColumn: m.dataColumn,
         }));
@@ -832,7 +850,7 @@ export default function ConverterPage() {
         setGeneratedZipBlob(blob);
 
         // HWPX 매핑으로 변환 및 저장 (재검증용)
-        const hwpxMappings = mappings
+        const hwpxMappings = currentMappings
           .filter(m => m.hwpxRow !== undefined && m.hwpxCol !== undefined)
           .map(m => ({
             excelColumn: m.dataColumn,
@@ -841,13 +859,13 @@ export default function ConverterPage() {
           }));
         setLastHwpxMappings(hwpxMappings);
 
-        // 먼저 다운로드 실행
-        downloadBlob(blob, fileName);
-
-        // 검증 실행 (다운로드 후)
+        // 검증 먼저 실행 (다운로드 전에 문제점 확인)
         console.log('[Converter] Starting verification with', hwpxMappings.length, 'mappings');
         await runVerification(blob, hwpxMappings);
-        console.log('[Converter] Verification completed');
+        console.log('[Converter] Verification completed - user can now download');
+
+        // 다운로드는 검증 결과 확인 후 사용자가 직접 클릭하도록 함
+        // (generatedZipBlob 상태에 저장되어 있으므로 다운로드 버튼에서 처리)
       } else {
         // HWPX가 아닌 경우 바로 다운로드
         downloadBlob(blob, fileName);
@@ -1259,8 +1277,8 @@ export default function ConverterPage() {
                 </div>
               )}
 
-              {/* 4. 검증 */}
-              {templateFile && dataFile && mappings.length > 0 && (
+              {/* 4. 검증 - 생성 시작 후에만 표시 */}
+              {templateFile && dataFile && mappings.length > 0 && (generating || verifying || verificationResult || generatedZipBlob) && (
                 <div className="bg-white rounded-xl border border-gray-200 p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-medium text-gray-900 flex items-center gap-2">
@@ -1293,10 +1311,9 @@ export default function ConverterPage() {
                     )}
                   </div>
 
-                  {/* 검증 프로그레스바 - 항상 표시 */}
+                  {/* 검증 프로그레스바 */}
                   <div className={`p-4 rounded-lg border shadow-sm ${
-                    verificationPhase === 'idle' ? 'bg-gray-50 border-gray-200' :
-                    verificationPhase === 'waiting' ? 'bg-yellow-50 border-yellow-300' :
+                    generating ? 'bg-gradient-to-r from-teal-50 to-blue-50 border-teal-300' :
                     verificationPhase === 'running' ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300' :
                     verificationResult?.status === 'pass' ? 'bg-green-50 border-green-300' :
                     verificationResult?.status === 'warning' ? 'bg-yellow-50 border-yellow-300' :
@@ -1304,33 +1321,29 @@ export default function ConverterPage() {
                   }`}>
                     <div className="flex items-center gap-3 mb-3">
                       <div className="relative">
-                        {verificationPhase === 'idle' && (
-                          <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        {generating && (
+                          <svg className="w-8 h-8 text-teal-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                           </svg>
                         )}
-                        {verificationPhase === 'waiting' && (
-                          <svg className="w-8 h-8 text-yellow-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        )}
-                        {verificationPhase === 'running' && (
+                        {!generating && verificationPhase === 'running' && (
                           <svg className="w-8 h-8 text-blue-600 animate-spin" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                           </svg>
                         )}
-                        {verificationPhase === 'complete' && verificationResult?.status === 'pass' && (
+                        {!generating && verificationPhase === 'complete' && verificationResult?.status === 'pass' && (
                           <svg className="w-8 h-8 text-green-500" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                           </svg>
                         )}
-                        {verificationPhase === 'complete' && verificationResult?.status === 'warning' && (
+                        {!generating && verificationPhase === 'complete' && verificationResult?.status === 'warning' && (
                           <svg className="w-8 h-8 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                           </svg>
                         )}
-                        {verificationPhase === 'complete' && verificationResult?.status === 'fail' && (
+                        {!generating && verificationPhase === 'complete' && verificationResult?.status === 'fail' && (
                           <svg className="w-8 h-8 text-red-500" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                           </svg>
@@ -1338,32 +1351,28 @@ export default function ConverterPage() {
                       </div>
                       <div>
                         <span className={`text-base font-semibold ${
-                          verificationPhase === 'idle' ? 'text-gray-600' :
-                          verificationPhase === 'waiting' ? 'text-yellow-700' :
+                          generating ? 'text-teal-700' :
                           verificationPhase === 'running' ? 'text-blue-800' :
                           verificationResult?.status === 'pass' ? 'text-green-700' :
                           verificationResult?.status === 'warning' ? 'text-yellow-700' :
                           'text-red-700'
                         }`}>
-                          {verificationPhase === 'idle' && '검증 대기'}
-                          {verificationPhase === 'waiting' && '매핑 완료 - 보고서 생성 대기'}
-                          {verificationPhase === 'running' && '3-Way Diff 검증 중...'}
-                          {verificationPhase === 'complete' && verificationResult?.status === 'pass' && '검증 통과'}
-                          {verificationPhase === 'complete' && verificationResult?.status === 'warning' && '주의 필요'}
-                          {verificationPhase === 'complete' && verificationResult?.status === 'fail' && '검증 실패'}
+                          {generating && '보고서 생성 중...'}
+                          {!generating && verificationPhase === 'running' && '샘플 검증 중...'}
+                          {!generating && verificationPhase === 'complete' && verificationResult?.status === 'pass' && '검증 통과'}
+                          {!generating && verificationPhase === 'complete' && verificationResult?.status === 'warning' && '주의 필요'}
+                          {!generating && verificationPhase === 'complete' && verificationResult?.status === 'fail' && '검증 실패'}
                         </span>
                         <p className={`text-xs ${
-                          verificationPhase === 'idle' ? 'text-gray-500' :
-                          verificationPhase === 'waiting' ? 'text-yellow-600' :
+                          generating ? 'text-blue-600' :
                           verificationPhase === 'running' ? 'text-blue-600' :
                           verificationResult?.status === 'pass' ? 'text-green-600' :
                           verificationResult?.status === 'warning' ? 'text-yellow-600' :
                           'text-red-600'
                         }`}>
-                          {verificationPhase === 'idle' && '템플릿과 데이터를 업로드 후 매핑하세요'}
-                          {verificationPhase === 'waiting' && '생성 버튼을 클릭하면 자동으로 검증됩니다'}
-                          {verificationPhase === 'running' && '템플릿 ↔ Excel ↔ 생성파일 비교'}
-                          {verificationPhase === 'complete' && `정확도: ${verificationResult?.accuracy?.toFixed(1)}%`}
+                          {generating && `${dataFile?.rowCount || 0}개 파일 생성 후 자동 검증합니다`}
+                          {!generating && verificationPhase === 'running' && '템플릿 ↔ Excel ↔ 생성파일 비교'}
+                          {!generating && verificationPhase === 'complete' && `정확도: ${verificationResult?.accuracy?.toFixed(1)}%`}
                         </p>
                       </div>
                     </div>
@@ -1371,25 +1380,23 @@ export default function ConverterPage() {
                     <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${
-                          verificationPhase === 'idle' ? 'bg-gray-300' :
-                          verificationPhase === 'waiting' ? 'bg-yellow-400' :
+                          generating ? 'bg-gradient-to-r from-teal-500 via-blue-500 to-teal-500' :
                           verificationPhase === 'running' ? 'bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-500' :
                           verificationResult?.status === 'pass' ? 'bg-green-500' :
                           verificationResult?.status === 'warning' ? 'bg-yellow-500' :
                           'bg-red-500'
                         }`}
                         style={{
-                          width: verificationPhase === 'idle' ? '0%' :
-                                 verificationPhase === 'waiting' ? '33%' :
-                                 verificationPhase === 'running' ? '66%' : '100%',
-                          ...(verificationPhase === 'running' ? {
+                          width: generating ? `${progress?.percentage || 50}%` :
+                                 verificationPhase === 'running' ? '80%' : '100%',
+                          ...((generating || verificationPhase === 'running') ? {
                             backgroundSize: '200% 100%',
                             animation: 'shimmer 1.5s infinite linear'
                           } : {})
                         }}
                       />
                     </div>
-                    {verificationPhase === 'running' && (
+                    {(generating || verificationPhase === 'running') && (
                       <style jsx>{`
                         @keyframes shimmer {
                           0% { background-position: 200% 0; }
@@ -1429,33 +1436,49 @@ export default function ConverterPage() {
                         <div className="space-y-2">
                           <p className="text-sm font-medium text-gray-700">검증 항목:</p>
                           <div className="space-y-1">
-                            {verificationResult.agentResults.map((agent, idx) => (
-                              <div key={idx} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg">
-                                <div className="flex items-center gap-2">
-                                  {agent.status === 'pass' ? (
-                                    <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                    </svg>
-                                  ) : agent.status === 'warning' ? (
-                                    <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                    </svg>
-                                  ) : (
-                                    <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                                    </svg>
-                                  )}
-                                  <span className="text-sm text-gray-700">{agent.description}</span>
+                            {verificationResult.agentResults.map((agent, idx) => {
+                              // info 레벨 제외한 실제 문제 수
+                              const criticalCount = agent.issues?.filter(i => i.severity !== 'info').length || 0;
+                              const infoCount = agent.issues?.filter(i => i.severity === 'info').length || 0;
+
+                              return (
+                                <div key={idx} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg">
+                                  <div className="flex items-center gap-2">
+                                    {agent.status === 'pass' ? (
+                                      <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                      </svg>
+                                    ) : agent.status === 'warning' ? (
+                                      <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                      </svg>
+                                    ) : (
+                                      <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                    <span className="text-sm text-gray-700">{agent.description}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    {criticalCount > 0 && (
+                                      <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700">
+                                        {criticalCount}건
+                                      </span>
+                                    )}
+                                    {infoCount > 0 && criticalCount === 0 && (
+                                      <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700">
+                                        참고 {infoCount}건
+                                      </span>
+                                    )}
+                                    {criticalCount === 0 && infoCount === 0 && (
+                                      <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-700">
+                                        통과
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                                <span className={`text-xs px-2 py-0.5 rounded ${
-                                  agent.status === 'pass' ? 'bg-green-100 text-green-700' :
-                                  agent.status === 'warning' ? 'bg-yellow-100 text-yellow-700' :
-                                  'bg-red-100 text-red-700'
-                                }`}>
-                                  {agent.issueCount === 0 ? '통과' : `${agent.issueCount}건`}
-                                </span>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -1564,30 +1587,83 @@ export default function ConverterPage() {
                 </div>
               )}
 
-              {/* 생성 버튼 및 진행률 표시 */}
+              {/* 메인 액션 버튼 - 상태에 따라 변경 */}
               <div className="space-y-3">
-                <button
-                  onClick={handleGenerate}
-                  disabled={generating || !templateFile || !dataFile || mappings.length === 0}
-                  className="w-full py-4 bg-gradient-to-r from-teal-600 to-blue-600 text-white rounded-xl hover:from-teal-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium flex items-center justify-center gap-2"
-                >
-                  {generating ? (
-                    <>
-                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      보고서 생성 중...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      보고서 일괄 생성
-                    </>
-                  )}
-                </button>
+                {/* 검증 완료 후: 다운로드 버튼 */}
+                {generatedZipBlob && verificationResult && !generating && !verifying ? (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => {
+                        const fileName = `reports_${new Date().toISOString().slice(0, 10)}.zip`;
+                        downloadBlob(generatedZipBlob, fileName);
+                      }}
+                      className={`w-full py-4 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
+                        verificationResult.status === 'pass'
+                          ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white'
+                          : verificationResult.status === 'warning'
+                            ? 'bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white'
+                            : 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white'
+                      }`}
+                    >
+                      {verificationResult.status === 'pass' ? (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                      )}
+                      {verificationResult.status === 'pass'
+                        ? `검증 통과 - 다운로드 (${dataFile?.rowCount || 0}개)`
+                        : verificationResult.status === 'warning'
+                          ? `주의사항 확인 후 다운로드 (${dataFile?.rowCount || 0}개)`
+                          : `문제 확인 후 다운로드 (${dataFile?.rowCount || 0}개)`}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setGeneratedZipBlob(null);
+                        setVerificationResult(null);
+                        setVerificationPhase('idle');
+                      }}
+                      className="w-full py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                    >
+                      다시 생성하기
+                    </button>
+                  </div>
+                ) : (
+                  /* 생성/검증 전 또는 진행 중: 생성 버튼 */
+                  <button
+                    onClick={handleGenerate}
+                    disabled={generating || verifying || !templateFile || !dataFile || mappings.length === 0}
+                    className="w-full py-4 bg-gradient-to-r from-teal-600 to-blue-600 text-white rounded-xl hover:from-teal-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium flex items-center justify-center gap-2"
+                  >
+                    {generating ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        보고서 생성 중...
+                      </>
+                    ) : verifying ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        검증 중...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        생성하고 검증 결과 보여드릴게요
+                      </>
+                    )}
+                  </button>
+                )}
 
                 {/* 진행률 표시 */}
                 {progress && (
@@ -1977,6 +2053,27 @@ export default function ConverterPage() {
                       <p className="text-xs mt-2 text-gray-300">
                         {templateFile.placeholders?.length || templateFile.columns?.length || 0}개 필드 감지됨
                       </p>
+                    </div>
+                  ) : templateFile && dataFile && mappings.length === 0 && autoMapping ? (
+                    <div className="text-center py-12 text-gray-400">
+                      <div className="relative w-16 h-16 mx-auto mb-4">
+                        <svg className="w-16 h-16 text-purple-300 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="w-8 h-8 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                      </div>
+                      <p className="text-lg mb-2 text-purple-600">AI가 매핑을 분석하고 있습니다</p>
+                      <p className="text-sm text-purple-400">템플릿 구조와 데이터를 매칭하는 중...</p>
+                      <div className="mt-4 w-48 mx-auto">
+                        <div className="h-1.5 bg-purple-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-purple-400 to-blue-400 transition-all duration-300"
+                            style={{ width: `${mappingProgress}%` }}
+                          />
+                        </div>
+                      </div>
                     </div>
                   ) : templateFile && dataFile && mappings.length === 0 ? (
                     <div className="text-center py-12 text-gray-400">
