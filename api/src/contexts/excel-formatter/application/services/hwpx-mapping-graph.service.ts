@@ -1025,17 +1025,18 @@ JSON 형식:
   ): Promise<string[]> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.default.Workbook();
-    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    try {
+      await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
 
-    // sheetName이 빈 문자열이면 첫 번째 시트 사용
-    const targetSheetName = sheetName && sheetName.trim() !== ''
-      ? sheetName
-      : workbook.worksheets[0]?.name;
+      // sheetName이 빈 문자열이면 첫 번째 시트 사용
+      const targetSheetName = sheetName && sheetName.trim() !== ''
+        ? sheetName
+        : workbook.worksheets[0]?.name;
 
-    const worksheet = workbook.getWorksheet(targetSheetName);
-    if (!worksheet) {
-      throw new Error(`Sheet "${targetSheetName}" not found`);
-    }
+      const worksheet = workbook.getWorksheet(targetSheetName);
+      if (!worksheet) {
+        throw new Error(`Sheet "${targetSheetName}" not found`);
+      }
 
     // 셀 값 추출 헬퍼 함수
     const getCellText = (cell: { value?: unknown }): string => {
@@ -1179,6 +1180,10 @@ JSON 형식:
     }
 
     return columns;
+    } finally {
+      // 메모리 릭 방지: workbook 정리
+      workbook.worksheets.length = 0;
+    }
   }
 
   /**

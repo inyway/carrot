@@ -508,20 +508,25 @@ export class HwpxGeneratorService {
   ): Promise<string[]> {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.default.Workbook();
-    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    try {
+      await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
 
-    // sheetName이 빈 문자열이면 첫 번째 시트 사용
-    const targetSheetName = sheetName && sheetName.trim() !== ''
-      ? sheetName
-      : workbook.worksheets[0]?.name;
+      // sheetName이 빈 문자열이면 첫 번째 시트 사용
+      const targetSheetName = sheetName && sheetName.trim() !== ''
+        ? sheetName
+        : workbook.worksheets[0]?.name;
 
-    const worksheet = workbook.getWorksheet(targetSheetName);
-    if (!worksheet) {
-      throw new Error(`Sheet "${targetSheetName}" not found`);
+      const worksheet = workbook.getWorksheet(targetSheetName);
+      if (!worksheet) {
+        throw new Error(`Sheet "${targetSheetName}" not found`);
+      }
+
+      const headerInfo = await this.findSmartHeaderRow(worksheet);
+      return headerInfo.columns;
+    } finally {
+      // 메모리 릭 방지: workbook 정리
+      workbook.worksheets.length = 0;
     }
-
-    const headerInfo = await this.findSmartHeaderRow(worksheet);
-    return headerInfo.columns;
   }
 
   /**
@@ -628,103 +633,108 @@ export class HwpxGeneratorService {
     // ExcelJS로 데이터 추출
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.default.Workbook();
-    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    try {
+      await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
 
-    // sheetName이 빈 문자열이면 첫 번째 시트 사용
-    const targetSheetName = sheetName && sheetName.trim() !== ''
-      ? sheetName
-      : workbook.worksheets[0]?.name;
+      // sheetName이 빈 문자열이면 첫 번째 시트 사용
+      const targetSheetName = sheetName && sheetName.trim() !== ''
+        ? sheetName
+        : workbook.worksheets[0]?.name;
 
-    const worksheet = workbook.getWorksheet(targetSheetName);
-    if (!worksheet) {
-      throw new Error(`Sheet "${targetSheetName}" not found`);
-    }
-
-    // 컬럼 인덱스 매핑 생성 (HeaderDetectionAgent 결과 사용)
-    // HeaderDetectionAgent는 이미 ExcelJS의 1-based colIndex를 반환하므로 그대로 사용
-    const columnIndexToName: Array<{ colIndex: number; name: string }> = headerAnalysis.columns.map(col => ({
-      colIndex: col.colIndex, // 이미 1-based임
-      name: col.name,
-    }));
-
-    console.log('[SmartSheetData] Column count:', columnIndexToName.length);
-    console.log('[SmartSheetData] Column mapping (first 5):',
-      columnIndexToName.slice(0, 5).map(c => `${c.name}@${c.colIndex}`).join(', '));
-
-    // 데이터 추출 - dataStartRow부터 시작
-    const data: Array<Record<string, unknown>> = [];
-    const dataStartRow = headerAnalysis.dataStartRow;
-
-    console.log('[SmartSheetData] Extracting data from row', dataStartRow);
-
-    // 메타 행 패턴 (반복되는 클래스 헤더 필터링용)
-    const metaPatterns = [
-      /^Class Name\s*:/i,
-      /^Book Name\s*:/i,
-      /^Class Time\s*:/i,
-      /^Class Day\s*:/i,
-      /^Teacher Name\s*:/i,
-      /^Manager Name\s*:/i,
-      /^Progress Rate\s*:/i,
-      /^No\.$/,
-      /^한글이름$/,
-      /^영문이름$/,
-      /^이메일$/,
-      /쿠팡.*학기/i,  // 쿠팡 25-3학기... 패턴
-    ];
-
-    const isMetaRow = (firstCellValue: unknown): boolean => {
-      const text = String(firstCellValue || '').trim();
-      // 빈 문자열이면 메타 아님
-      if (!text) return false;
-      // 숫자만 있으면 데이터 행 (No. 컬럼의 데이터)
-      if (/^\d+$/.test(text)) return false;
-      // 메타 패턴 체크
-      return metaPatterns.some(pattern => pattern.test(text));
-    };
-
-    worksheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
-      // dataStartRow 이전은 건너뛰기
-      if (rowNum < dataStartRow) {
-        return;
+      const worksheet = workbook.getWorksheet(targetSheetName);
+      if (!worksheet) {
+        throw new Error(`Sheet "${targetSheetName}" not found`);
       }
 
-      // 첫 번째 셀의 값으로 메타 행 여부 확인
-      const firstCell = row.getCell(1);
-      const firstValue = this.extractCellValue(firstCell.value);
+      // 컬럼 인덱스 매핑 생성 (HeaderDetectionAgent 결과 사용)
+      // HeaderDetectionAgent는 이미 ExcelJS의 1-based colIndex를 반환하므로 그대로 사용
+      const columnIndexToName: Array<{ colIndex: number; name: string }> = headerAnalysis.columns.map(col => ({
+        colIndex: col.colIndex, // 이미 1-based임
+        name: col.name,
+      }));
 
-      // 메타 행 패턴이면 건너뛰기 (반복되는 클래스 헤더)
-      if (isMetaRow(firstValue)) {
-        return;
-      }
+      console.log('[SmartSheetData] Column count:', columnIndexToName.length);
+      console.log('[SmartSheetData] Column mapping (first 5):',
+        columnIndexToName.slice(0, 5).map(c => `${c.name}@${c.colIndex}`).join(', '));
 
-      const rowData: Record<string, unknown> = {};
-      let hasData = false;
+      // 데이터 추출 - dataStartRow부터 시작
+      const data: Array<Record<string, unknown>> = [];
+      const dataStartRow = headerAnalysis.dataStartRow;
 
-      // 각 컬럼에 대해 값 추출
-      for (const { colIndex, name } of columnIndexToName) {
-        const cell = row.getCell(colIndex);
-        const value = cell.value;
+      console.log('[SmartSheetData] Extracting data from row', dataStartRow);
 
-        if (value !== null && value !== undefined) {
-          hasData = true;
-          rowData[name] = this.extractCellValue(value);
+      // 메타 행 패턴 (반복되는 클래스 헤더 필터링용)
+      const metaPatterns = [
+        /^Class Name\s*:/i,
+        /^Book Name\s*:/i,
+        /^Class Time\s*:/i,
+        /^Class Day\s*:/i,
+        /^Teacher Name\s*:/i,
+        /^Manager Name\s*:/i,
+        /^Progress Rate\s*:/i,
+        /^No\.$/,
+        /^한글이름$/,
+        /^영문이름$/,
+        /^이메일$/,
+        /쿠팡.*학기/i,  // 쿠팡 25-3학기... 패턴
+      ];
+
+      const isMetaRow = (firstCellValue: unknown): boolean => {
+        const text = String(firstCellValue || '').trim();
+        // 빈 문자열이면 메타 아님
+        if (!text) return false;
+        // 숫자만 있으면 데이터 행 (No. 컬럼의 데이터)
+        if (/^\d+$/.test(text)) return false;
+        // 메타 패턴 체크
+        return metaPatterns.some(pattern => pattern.test(text));
+      };
+
+      worksheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
+        // dataStartRow 이전은 건너뛰기
+        if (rowNum < dataStartRow) {
+          return;
         }
+
+        // 첫 번째 셀의 값으로 메타 행 여부 확인
+        const firstCell = row.getCell(1);
+        const firstValue = this.extractCellValue(firstCell.value);
+
+        // 메타 행 패턴이면 건너뛰기 (반복되는 클래스 헤더)
+        if (isMetaRow(firstValue)) {
+          return;
+        }
+
+        const rowData: Record<string, unknown> = {};
+        let hasData = false;
+
+        // 각 컬럼에 대해 값 추출
+        for (const { colIndex, name } of columnIndexToName) {
+          const cell = row.getCell(colIndex);
+          const value = cell.value;
+
+          if (value !== null && value !== undefined) {
+            hasData = true;
+            rowData[name] = this.extractCellValue(value);
+          }
+        }
+
+        if (hasData) {
+          data.push(rowData);
+        }
+      });
+
+      console.log('[SmartSheetData] Extracted rows:', data.length);
+      if (data.length > 0) {
+        // 첫 행의 한글이름, 영문이름 값 확인
+        const firstRow = data[0];
+        console.log('[SmartSheetData] First row - 한글이름:', firstRow['한글이름'], ', 영문이름:', firstRow['영문이름']);
       }
 
-      if (hasData) {
-        data.push(rowData);
-      }
-    });
-
-    console.log('[SmartSheetData] Extracted rows:', data.length);
-    if (data.length > 0) {
-      // 첫 행의 한글이름, 영문이름 값 확인
-      const firstRow = data[0];
-      console.log('[SmartSheetData] First row - 한글이름:', firstRow['한글이름'], ', 영문이름:', firstRow['영문이름']);
+      return data;
+    } finally {
+      // 메모리 릭 방지: workbook 정리
+      workbook.worksheets.length = 0;
     }
-
-    return data;
   }
 
   /**

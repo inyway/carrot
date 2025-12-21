@@ -100,6 +100,11 @@ const RETRY_CONFIG = {
   ],
 };
 
+// 메모리 관련 설정
+const MEMORY_CONFIG = {
+  maxErrorsToKeep: 100, // 에러 배열 최대 크기
+};
+
 @Injectable()
 export class UnifiedGeneratorService {
   constructor(
@@ -314,8 +319,8 @@ export class UnifiedGeneratorService {
     // 매핑 엔트리 배열 (한 번만 생성)
     const mappingEntries = Array.from(mappingMap.entries());
 
-    // 템플릿 워크북 해제 (메모리 절약)
-    // templateWorkbook은 더 이상 필요 없음
+    // 메모리 릭 방지: 템플릿 워크북 정리 (메타데이터 추출 완료)
+    templateWorkbook.worksheets.length = 0;
 
     // ============================================
     // 2단계: 데이터 추출 (한 번만 실행)
@@ -451,7 +456,10 @@ export class UnifiedGeneratorService {
           return { type: 'success' as const, ...result.result };
         } else {
           stats.failureCount++;
-          stats.errors.push(result.error);
+          // 메모리 릭 방지: 에러 배열 크기 제한
+          if (stats.errors.length < MEMORY_CONFIG.maxErrorsToKeep) {
+            stats.errors.push(result.error);
+          }
           console.warn(
             `[UnifiedGenerator] Row ${rowIdx + 1} 생성 실패: ${result.error.error}`,
           );
@@ -639,47 +647,52 @@ export class UnifiedGeneratorService {
 
         // Excel 워크북 로드
         const workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+        try {
+          await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
 
-        const sheets = workbook.worksheets.map((ws) => ws.name);
-        const targetSheet = sheetName || sheets[0];
-        const worksheet = workbook.getWorksheet(targetSheet);
+          const sheets = workbook.worksheets.map((ws) => ws.name);
+          const targetSheet = sheetName || sheets[0];
+          const worksheet = workbook.getWorksheet(targetSheet);
 
-        if (!worksheet) {
-          throw new Error(`시트 "${targetSheet}"를 찾을 수 없습니다.`);
-        }
+          if (!worksheet) {
+            throw new Error(`시트 "${targetSheet}"를 찾을 수 없습니다.`);
+          }
 
-        // 계층적 컬럼명 사용
-        const columns = headerResult.columns;
-        const columnMap = new Map(columns.map(c => [c.colIndex, c.name]));
+          // 계층적 컬럼명 사용
+          const columns = headerResult.columns;
+          const columnMap = new Map(columns.map(c => [c.colIndex, c.name]));
 
-        const data: Record<string, unknown>[] = [];
+          const data: Record<string, unknown>[] = [];
 
-        // dataStartRow부터 데이터 추출
-        worksheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
-          if (rowNum < headerResult.dataStartRow) return;
+          // dataStartRow부터 데이터 추출
+          worksheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
+            if (rowNum < headerResult.dataStartRow) return;
 
-          const rowData: Record<string, unknown> = {};
-          let hasData = false;
+            const rowData: Record<string, unknown> = {};
+            let hasData = false;
 
-          row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-            const columnName = columnMap.get(colNumber);
-            if (columnName) {
-              const value = extractCellValue(cell);
-              if (value !== null && value !== undefined && value !== '') {
-                hasData = true;
+            row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+              const columnName = columnMap.get(colNumber);
+              if (columnName) {
+                const value = extractCellValue(cell);
+                if (value !== null && value !== undefined && value !== '') {
+                  hasData = true;
+                }
+                rowData[columnName] = value;
               }
-              rowData[columnName] = value;
+            });
+
+            if (hasData) {
+              data.push(rowData);
             }
           });
 
-          if (hasData) {
-            data.push(rowData);
-          }
-        });
-
-        console.log('[UnifiedGenerator] Extracted data rows:', data.length);
-        return data;
+          console.log('[UnifiedGenerator] Extracted data rows:', data.length);
+          return data;
+        } finally {
+          // 메모리 릭 방지: workbook 정리
+          workbook.worksheets.length = 0;
+        }
       }
       case 'csv': {
         const result = extractCsvDataUtil(buffer);
