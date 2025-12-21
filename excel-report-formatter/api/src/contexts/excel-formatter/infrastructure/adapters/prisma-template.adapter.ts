@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../common/database';
 import type {
   TemplateRepositoryPort,
@@ -14,15 +13,17 @@ export class PrismaTemplateAdapter implements TemplateRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(input: CreateTemplateInput): Promise<TemplateEntity> {
+    const data: Record<string, unknown> = {
+      companyId: input.companyId,
+      name: input.name,
+      description: input.description,
+      fileName: input.fileName,
+      fileUrl: input.fileUrl,
+      structure: input.structure,
+    };
+
     const template = await this.prisma.template.create({
-      data: {
-        companyId: input.companyId,
-        name: input.name,
-        description: input.description,
-        fileName: input.fileName,
-        fileUrl: input.fileUrl,
-        structure: input.structure as unknown as Prisma.InputJsonValue,
-      },
+      data: data as any,
     });
 
     return this.mapToEntity(template);
@@ -65,16 +66,16 @@ export class PrismaTemplateAdapter implements TemplateRepositoryPort {
   }
 
   async update(id: string, input: UpdateTemplateInput): Promise<TemplateEntity> {
-    const updateData: Prisma.TemplateUpdateInput = {};
+    const updateData: Record<string, unknown> = {};
 
     if (input.name) updateData.name = input.name;
     if (input.description !== undefined) updateData.description = input.description;
     if (input.fileUrl !== undefined) updateData.fileUrl = input.fileUrl;
-    if (input.structure) updateData.structure = input.structure as unknown as Prisma.InputJsonValue;
+    if (input.structure) updateData.structure = input.structure;
 
     const template = await this.prisma.template.update({
       where: { id },
-      data: updateData,
+      data: updateData as any,
     });
 
     return this.mapToEntity(template);
