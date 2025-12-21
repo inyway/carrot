@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
 
+const API_BASE_URL = process.env.NESTJS_API_URL || 'http://localhost:4000/api';
+
 export const runtime = 'nodejs';
 
 type FileFormat = 'xlsx' | 'xls' | 'csv' | 'json' | 'hwpx';
@@ -278,7 +280,7 @@ async function convertToHwpx(
   }
 
   // AI 매핑으로 자동 매핑
-  const mappingRes = await fetch('http://localhost:4000/api/excel-formatter/hwpx/ai-mapping', {
+  const mappingRes = await fetch(`${API_BASE_URL}/excel-formatter/hwpx/ai-mapping`, {
     method: 'POST',
     body: formData,
   });
@@ -303,7 +305,7 @@ async function convertToHwpx(
   }
   generateFormData.append('mappings', JSON.stringify(mappings));
 
-  const generateRes = await fetch('http://localhost:4000/api/excel-formatter/hwpx/generate', {
+  const generateRes = await fetch(`${API_BASE_URL}/excel-formatter/hwpx/generate`, {
     method: 'POST',
     body: generateFormData,
   });

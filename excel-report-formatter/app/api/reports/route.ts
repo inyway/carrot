@@ -71,12 +71,12 @@ export async function POST(request: NextRequest) {
         template_id: templateId,
         template_name: templateName,
         data_file_name: dataFileName,
-        mappings: JSON.stringify(mappings),
+        mappings,
         row_count: rowCount,
         matched_count: mappings.filter(m => m.dataColumn !== null).length,
-        headers: JSON.stringify(headers || []),
-        preview_data: JSON.stringify(previewData || []),
-        full_data: JSON.stringify(fullData || []),
+        headers: headers || [],
+        preview_data: previewData || [],
+        full_data: fullData || [],
       })
       .select()
       .single();

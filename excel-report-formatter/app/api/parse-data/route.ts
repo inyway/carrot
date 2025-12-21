@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
+import Papa from 'papaparse';
 
 interface ApiResponse<T = undefined> {
   success: boolean;
@@ -33,35 +34,35 @@ export async function POST(request: NextRequest) {
     if (fileName.endsWith('.csv')) {
       // CSV 파싱
       const text = new TextDecoder('utf-8').decode(arrayBuffer);
-      const lines = text.split('\n').filter(line => line.trim());
+      const result = Papa.parse<Record<string, unknown>>(text, {
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: true,
+        transformHeader: (value) => value.trim(),
+      });
 
-      if (lines.length > 0) {
-        // 헤더 추출
-        headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-
-        // 데이터 행 추출
-        for (let i = 1; i < lines.length; i++) {
-          const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-          const row: Record<string, string | number | boolean | null> = {};
-
-          headers.forEach((header, index) => {
-            const value = values[index] || '';
-            // 숫자 변환 시도
-            const num = Number(value);
-            if (!isNaN(num) && value !== '') {
-              row[header] = num;
-            } else if (value.toLowerCase() === 'true') {
-              row[header] = true;
-            } else if (value.toLowerCase() === 'false') {
-              row[header] = false;
-            } else {
-              row[header] = value || null;
-            }
-          });
-
-          rows.push(row);
-        }
+      if (result.errors.length > 0) {
+        return NextResponse.json<ApiResponse>(
+          { success: false, error: `CSV 파싱 오류: ${result.errors[0].message}` },
+          { status: 400 }
+        );
       }
+
+      headers = result.meta.fields ?? [];
+      rows = result.data.map((row) => {
+        const normalized: Record<string, string | number | boolean | null> = {};
+        headers.forEach((header) => {
+          const value = row[header];
+          if (value === null || value === undefined || value === '') {
+            normalized[header] = null;
+          } else if (typeof value === 'number' || typeof value === 'boolean') {
+            normalized[header] = value;
+          } else {
+            normalized[header] = String(value);
+          }
+        });
+        return normalized;
+      });
     } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
       // Excel 파싱
       const workbook = XLSX.read(arrayBuffer, { type: 'array' });
