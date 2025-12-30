@@ -1,10 +1,24 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+// Lazy initialization - 빌드 타임에 에러 방지
+let supabaseServerInstance: SupabaseClient | null = null
 
-// 서버 사이드용 Supabase 클라이언트 (API Routes에서 사용)
-export const supabaseServer = createClient(supabaseUrl, supabaseAnonKey)
+function getSupabaseServer(): SupabaseClient {
+  if (!supabaseServerInstance) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('Missing Supabase environment variables')
+    }
+    
+    supabaseServerInstance = createClient(supabaseUrl, supabaseAnonKey)
+  }
+  return supabaseServerInstance
+}
+
+// 서버 사이드용 Supabase 클라이언트 getter (API Routes에서 사용)
+export { getSupabaseServer }
 
 // Types (re-export from main supabase file for convenience)
 export interface Template {
@@ -31,7 +45,7 @@ export interface TemplateColumn {
 
 // Template Functions for Server
 export async function getTemplatesServer() {
-  const { data, error } = await supabaseServer
+  const { data, error } = await getSupabaseServer()
     .from('templates')
     .select(`
       *,
@@ -47,8 +61,10 @@ export async function createTemplateServer(
   template: Omit<Template, 'id' | 'created_at' | 'updated_at'>,
   columns: Omit<TemplateColumn, 'id' | 'template_id' | 'created_at'>[]
 ) {
+  const client = getSupabaseServer()
+  
   // Insert template
-  const { data: templateData, error: templateError } = await supabaseServer
+  const { data: templateData, error: templateError } = await client
     .from('templates')
     .insert(template)
     .select()
@@ -63,7 +79,7 @@ export async function createTemplateServer(
       template_id: templateData.id,
     }))
 
-    const { error: columnsError } = await supabaseServer
+    const { error: columnsError } = await client
       .from('template_columns')
       .insert(columnsWithTemplateId)
 
@@ -74,7 +90,7 @@ export async function createTemplateServer(
 }
 
 export async function deleteTemplateServer(id: string) {
-  const { error } = await supabaseServer
+  const { error } = await getSupabaseServer()
     .from('templates')
     .delete()
     .eq('id', id)

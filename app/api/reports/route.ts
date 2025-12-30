@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase-server';
+import { getSupabaseServer } from '@/lib/supabase-server';
 
 interface ColumnMapping {
   templateColumn: string;
@@ -28,7 +28,7 @@ interface ReportData {
 // GET: 저장된 보고서 목록 조회
 export async function GET() {
   try {
-    const { data, error } = await supabaseServer
+    const { data, error } = await getSupabaseServer()
       .from('reports')
       .select('*')
       .order('created_at', { ascending: false });
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data, error } = await supabaseServer
+    const { data, error } = await getSupabaseServer()
       .from('reports')
       .insert({
         name,
@@ -111,7 +111,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const { error } = await supabaseServer
+    const { error } = await getSupabaseServer()
       .from('reports')
       .delete()
       .eq('id', id);
