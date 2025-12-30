@@ -54,44 +54,49 @@ export class HeaderDetectionAgent {
    */
   async analyze(buffer: Buffer, sheetName?: string): Promise<HeaderAnalysisResult> {
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    try {
+      await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
 
-    const targetSheetName = sheetName?.trim() || workbook.worksheets[0]?.name;
-    const worksheet = workbook.getWorksheet(targetSheetName);
+      const targetSheetName = sheetName?.trim() || workbook.worksheets[0]?.name;
+      const worksheet = workbook.getWorksheet(targetSheetName);
 
-    if (!worksheet) {
-      throw new Error(`Sheet "${targetSheetName}" not found`);
+      if (!worksheet) {
+        throw new Error(`Sheet "${targetSheetName}" not found`);
+      }
+
+      console.log('[HeaderAgent] Analyzing worksheet:', targetSheetName);
+
+      // Step 1: 메타 행 감지
+      const metaResult = this.detectMetaRows(worksheet);
+      console.log('[HeaderAgent] Meta rows:', metaResult.metaRows);
+
+      // Step 2: 헤더 행 감지
+      const headerResult = this.detectHeaderRows(worksheet, metaResult.metaRows);
+      console.log('[HeaderAgent] Header rows:', headerResult.headerRows);
+      console.log('[HeaderAgent] Data start row:', headerResult.dataStartRow);
+
+      // Step 3: 병합 셀 정보 추출 (슬림하게)
+      const merges = this.extractMergeInfo(worksheet, headerResult.headerRows);
+      console.log('[HeaderAgent] Merge count:', merges.length);
+
+      // Step 4: 계층적 컬럼명 생성
+      const columns = this.generateHierarchicalColumns(
+        worksheet,
+        headerResult.headerRows,
+        merges
+      );
+      console.log('[HeaderAgent] Columns generated:', columns.length);
+
+      return {
+        headerRows: headerResult.headerRows,
+        dataStartRow: headerResult.dataStartRow,
+        columns,
+        metaInfo: metaResult.metaInfo,
+      };
+    } finally {
+      // 메모리 릭 방지: workbook 정리
+      workbook.worksheets.length = 0;
     }
-
-    console.log('[HeaderAgent] Analyzing worksheet:', targetSheetName);
-
-    // Step 1: 메타 행 감지
-    const metaResult = this.detectMetaRows(worksheet);
-    console.log('[HeaderAgent] Meta rows:', metaResult.metaRows);
-
-    // Step 2: 헤더 행 감지
-    const headerResult = this.detectHeaderRows(worksheet, metaResult.metaRows);
-    console.log('[HeaderAgent] Header rows:', headerResult.headerRows);
-    console.log('[HeaderAgent] Data start row:', headerResult.dataStartRow);
-
-    // Step 3: 병합 셀 정보 추출 (슬림하게)
-    const merges = this.extractMergeInfo(worksheet, headerResult.headerRows);
-    console.log('[HeaderAgent] Merge count:', merges.length);
-
-    // Step 4: 계층적 컬럼명 생성
-    const columns = this.generateHierarchicalColumns(
-      worksheet,
-      headerResult.headerRows,
-      merges
-    );
-    console.log('[HeaderAgent] Columns generated:', columns.length);
-
-    return {
-      headerRows: headerResult.headerRows,
-      dataStartRow: headerResult.dataStartRow,
-      columns,
-      metaInfo: metaResult.metaInfo,
-    };
   }
 
   /**
