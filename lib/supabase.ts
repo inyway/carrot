@@ -1,27 +1,14 @@
 import { createBrowserClient } from '@supabase/ssr'
 
-// Lazy initialization - 빌드 타임에 에러 방지
-let supabaseInstance: ReturnType<typeof createBrowserClient> | null = null
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
+// 클라이언트 생성 (환경변수가 없으면 빈 문자열로 생성 - 런타임에서 에러 처리)
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
+
+// getSupabase는 호환성을 위해 유지
 export function getSupabase() {
-  if (!supabaseInstance) {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    
-    if (!supabaseUrl || !supabaseAnonKey) {
-      throw new Error('Missing Supabase environment variables')
-    }
-    
-    supabaseInstance = createBrowserClient(supabaseUrl, supabaseAnonKey)
-  }
-  return supabaseInstance
-}
-
-// 기존 코드 호환성을 위한 alias
-export const supabase = {
-  get auth() { return getSupabase().auth },
-  get storage() { return getSupabase().storage },
-  from: (table: string) => getSupabase().from(table),
+  return supabase
 }
 
 // Auth Functions
