@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Delete,
+  Param,
   Body,
   Query,
   UseInterceptors,
@@ -36,6 +37,19 @@ interface TemplateListResponse {
     name: string;
     slug: string;
   };
+}
+
+// Excel 미리보기 데이터
+interface ExcelPreviewData {
+  sheetName: string;
+  headers: string[];
+  rows: (string | number)[][];
+  formulas?: { cell: string; formula: string }[];
+}
+
+// 템플릿 상세 응답
+interface TemplateDetailResponse extends TemplateListResponse {
+  preview: ExcelPreviewData | null;
 }
 
 // 분석 결과 응답
@@ -78,6 +92,40 @@ export class TemplateController {
       return {
         success: false,
         error: error instanceof Error ? error.message : '템플릿 목록을 불러오는 중 오류가 발생했습니다.',
+      };
+    }
+  }
+
+  /**
+   * 템플릿 상세 조회
+   * GET /api/templates/:id
+   */
+  @Get(':id')
+  async getTemplateDetail(
+    @Param('id') id: string,
+  ): Promise<ApiResponse<TemplateDetailResponse>> {
+    try {
+      const template = await this.templateService.getTemplate(id);
+
+      const data: TemplateDetailResponse = {
+        id: template.id,
+        name: template.name,
+        fileName: template.fileName,
+        columns: this.extractColumns(template.structure),
+        createdAt: template.createdAt.toISOString(),
+        companyId: template.companyId,
+        company: template.company,
+        preview: this.buildPreviewFromStructure(template.structure),
+      };
+
+      return {
+        success: true,
+        data,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '템플릿 상세 조회 중 오류가 발생했습니다.',
       };
     }
   }
@@ -189,6 +237,84 @@ export class TemplateController {
         name: String(c.value),
         type: 'string',
       }));
+  }
+
+  /**
+   * 템플릿 구조에서 Excel 미리보기 데이터 생성
+   */
+  private buildPreviewFromStructure(structure: unknown): ExcelPreviewData | null {
+    if (!structure || typeof structure !== 'object') {
+      return null;
+    }
+
+    const s = structure as { sheets?: TemplateSheetVO[] };
+    const firstSheet = s.sheets?.[0];
+    if (!firstSheet?.blocks) return null;
+
+    // 헤더 추출
+    const headerBlock = firstSheet.blocks.find((b: TemplateBlockVO) => b.type === 'HEADER');
+    const headers = headerBlock?.cells
+      ?.filter((c: CellInfo) => c.value !== null && c.value !== undefined)
+      .map((c: CellInfo) => String(c.value)) ?? [];
+
+    if (headers.length === 0) return null;
+
+    // 데이터 행 추출 (TABLE / METRIC_BLOCK에서, 최대 10행)
+    const rows: (string | number)[][] = [];
+    const dataBlocks = firstSheet.blocks.filter(
+      (b: TemplateBlockVO) => b.type === 'TABLE' || b.type === 'METRIC_BLOCK',
+    );
+
+    for (const block of dataBlocks) {
+      if (!block.cells || rows.length >= 10) break;
+
+      // 셀을 행별로 그룹화
+      const rowMap = new Map<number, (string | number)[]>();
+      for (const cell of block.cells) {
+        const rowNum = this.getRowFromAddress(cell.address);
+        if (!rowMap.has(rowNum)) {
+          rowMap.set(rowNum, []);
+        }
+        const val = cell.value;
+        rowMap.get(rowNum)!.push(
+          val === null || val === undefined ? '' :
+          typeof val === 'number' ? val : String(val),
+        );
+      }
+
+      // 행 번호 순으로 정렬하여 추가
+      const sortedRows = [...rowMap.entries()].sort((a, b) => a[0] - b[0]);
+      for (const [, rowCells] of sortedRows) {
+        if (rows.length >= 10) break;
+        rows.push(rowCells);
+      }
+    }
+
+    // 수식 추출
+    const formulas: { cell: string; formula: string }[] = [];
+    for (const block of firstSheet.blocks) {
+      if (!block.cells) continue;
+      for (const cell of block.cells) {
+        if (cell.formula) {
+          formulas.push({
+            cell: cell.address,
+            formula: cell.formula,
+          });
+        }
+      }
+    }
+
+    return {
+      sheetName: firstSheet.name,
+      headers,
+      rows,
+      formulas: formulas.length > 0 ? formulas : undefined,
+    };
+  }
+
+  private getRowFromAddress(address: string): number {
+    const match = address.match(/\d+$/);
+    return match ? parseInt(match[0]) : 0;
   }
 }
 

@@ -13,9 +13,12 @@ import {
   HttpStatus,
   NotFoundException,
 } from '@nestjs/common';
+import { IsString, IsNotEmpty } from 'class-validator';
 import { PrismaService } from '../../../../common/database/prisma.service';
 
 class CreateCompanyRequest {
+  @IsString()
+  @IsNotEmpty()
   name: string;
 }
 

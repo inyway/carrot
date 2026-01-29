@@ -36,202 +36,12 @@ interface CleanReport {
   createdAt: string;
 }
 
-// ============================================
-// Mock 데이터 (개발용)
-// ============================================
-const USE_MOCK_DATA = true; // 실제 API 연동 시 false로 변경
-
-const MOCK_COMPANIES: Company[] = [
-  { id: 'company-1', name: '삼성전자', slug: 'samsung' },
-  { id: 'company-2', name: 'LG전자', slug: 'lg' },
-  { id: 'company-3', name: 'SK하이닉스', slug: 'skhynix' },
-];
-
-const MOCK_TEMPLATES: Template[] = [
-  {
-    id: 'template-1',
-    name: '월간 매출 보고서',
-    fileName: '삼성_월간매출_템플릿.xlsx',
-    columns: [
-      { name: '날짜', type: 'date' },
-      { name: '제품명', type: 'string' },
-      { name: '판매수량', type: 'number' },
-      { name: '매출액', type: 'number' },
-      { name: '영업이익', type: 'number' },
-    ],
-    createdAt: '2024-11-15T09:00:00Z',
-    companyId: 'company-1',
-    company: { id: 'company-1', name: '삼성전자', slug: 'samsung' },
-  },
-  {
-    id: 'template-2',
-    name: '분기별 실적 리포트',
-    fileName: '삼성_분기실적_템플릿.xlsx',
-    columns: [
-      { name: '분기', type: 'string' },
-      { name: '매출총액', type: 'number' },
-      { name: '영업이익', type: 'number' },
-      { name: '순이익', type: 'number' },
-    ],
-    createdAt: '2024-10-20T14:30:00Z',
-    companyId: 'company-1',
-    company: { id: 'company-1', name: '삼성전자', slug: 'samsung' },
-  },
-  {
-    id: 'template-3',
-    name: '주간 판매 현황',
-    fileName: 'LG_주간판매_템플릿.xlsx',
-    columns: [
-      { name: '주차', type: 'string' },
-      { name: '제품군', type: 'string' },
-      { name: '판매량', type: 'number' },
-      { name: '전주대비', type: 'number' },
-    ],
-    createdAt: '2024-12-01T10:00:00Z',
-    companyId: 'company-2',
-    company: { id: 'company-2', name: 'LG전자', slug: 'lg' },
-  },
-  {
-    id: 'template-4',
-    name: '반도체 생산량 보고서',
-    fileName: 'SK_반도체생산_템플릿.xlsx',
-    columns: [
-      { name: '생산라인', type: 'string' },
-      { name: '제품타입', type: 'string' },
-      { name: '생산량', type: 'number' },
-      { name: '불량률', type: 'number' },
-      { name: '가동률', type: 'number' },
-    ],
-    createdAt: '2024-11-28T16:45:00Z',
-    companyId: 'company-3',
-    company: { id: 'company-3', name: 'SK하이닉스', slug: 'skhynix' },
-  },
-];
-
-// Excel 미리보기용 샘플 데이터
 interface ExcelPreviewData {
   sheetName: string;
   headers: string[];
   rows: (string | number)[][];
   formulas?: { cell: string; formula: string }[];
 }
-
-const MOCK_EXCEL_PREVIEWS: Record<string, ExcelPreviewData> = {
-  'template-1': {
-    sheetName: '월간매출',
-    headers: ['날짜', '제품명', '판매수량', '매출액', '영업이익'],
-    rows: [
-      ['2024-10-01', '갤럭시 S24', 15000, 18000000000, 3600000000],
-      ['2024-10-01', '갤럭시 Z폴드6', 8000, 16000000000, 4000000000],
-      ['2024-10-02', '갤럭시 S24', 12000, 14400000000, 2880000000],
-      ['2024-10-02', '갤럭시 버즈3', 25000, 5000000000, 1500000000],
-      ['2024-10-03', '갤럭시 탭 S9', 6000, 6000000000, 1200000000],
-    ],
-    formulas: [
-      { cell: 'D7', formula: '=SUM(D2:D6)' },
-      { cell: 'E7', formula: '=SUM(E2:E6)' },
-    ],
-  },
-  'template-2': {
-    sheetName: '분기실적',
-    headers: ['분기', '매출총액', '영업이익', '순이익'],
-    rows: [
-      ['2024 Q1', 74000000000000, 6500000000000, 5200000000000],
-      ['2024 Q2', 78000000000000, 7200000000000, 5800000000000],
-      ['2024 Q3', 91000000000000, 10400000000000, 8400000000000],
-    ],
-    formulas: [
-      { cell: 'B5', formula: '=SUM(B2:B4)' },
-      { cell: 'C5', formula: '=SUM(C2:C4)' },
-      { cell: 'D5', formula: '=SUM(D2:D4)' },
-    ],
-  },
-  'template-3': {
-    sheetName: '주간판매',
-    headers: ['주차', '제품군', '판매량', '전주대비'],
-    rows: [
-      ['48주차', 'TV', 15200, '+12%'],
-      ['48주차', '냉장고', 8900, '+8%'],
-      ['48주차', '세탁기', 7200, '+15%'],
-      ['48주차', '에어컨', 3100, '-5%'],
-      ['48주차', '스타일러', 4500, '+22%'],
-    ],
-  },
-  'template-4': {
-    sheetName: '생산현황',
-    headers: ['생산라인', '제품타입', '생산량', '불량률', '가동률'],
-    rows: [
-      ['M16-1', 'HBM3E', 125000, '0.8%', '95.2%'],
-      ['M16-2', 'HBM3E', 118000, '0.9%', '94.8%'],
-      ['M15-1', 'DDR5', 450000, '1.2%', '92.5%'],
-      ['M15-2', 'DDR5', 420000, '1.1%', '93.1%'],
-      ['M14-1', 'NAND 256L', 890000, '1.5%', '91.0%'],
-    ],
-    formulas: [
-      { cell: 'C7', formula: '=SUM(C2:C6)' },
-    ],
-  },
-};
-
-const MOCK_CLEAN_REPORTS: Record<string, CleanReport[]> = {
-  'template-1': [
-    {
-      id: 'report-1',
-      companyId: 'company-1',
-      templateId: 'template-1',
-      periodStart: '2024-10-01',
-      periodEnd: '2024-10-31',
-      finalText: '2024년 10월 삼성전자 월간 매출 보고서입니다. 총 매출 45조원, 영업이익 8.2조원을 기록했습니다. 스마트폰 부문이 전월 대비 12% 성장...',
-      hasEmbedding: true,
-      createdAt: '2024-11-05T10:30:00Z',
-    },
-    {
-      id: 'report-2',
-      companyId: 'company-1',
-      templateId: 'template-1',
-      periodStart: '2024-09-01',
-      periodEnd: '2024-09-30',
-      finalText: '2024년 9월 삼성전자 월간 매출 보고서입니다. 총 매출 42조원, 영업이익 7.8조원을 기록했습니다. 반도체 부문 회복세 지속...',
-      hasEmbedding: true,
-      createdAt: '2024-10-05T09:15:00Z',
-    },
-    {
-      id: 'report-3',
-      companyId: 'company-1',
-      templateId: 'template-1',
-      periodStart: '2024-08-01',
-      periodEnd: '2024-08-31',
-      finalText: '2024년 8월 삼성전자 월간 매출 보고서입니다. 여름 비수기에도 불구하고 견조한 실적을 유지...',
-      hasEmbedding: false,
-      createdAt: '2024-09-03T11:00:00Z',
-    },
-  ],
-  'template-2': [
-    {
-      id: 'report-4',
-      companyId: 'company-1',
-      templateId: 'template-2',
-      periodStart: '2024-07-01',
-      periodEnd: '2024-09-30',
-      finalText: '2024년 3분기 삼성전자 실적 리포트. 반도체 업황 회복과 함께 역대 최고 분기 실적 달성. AI 반도체 수요 급증...',
-      hasEmbedding: true,
-      createdAt: '2024-10-28T14:00:00Z',
-    },
-  ],
-  'template-3': [
-    {
-      id: 'report-5',
-      companyId: 'company-2',
-      templateId: 'template-3',
-      periodStart: '2024-11-25',
-      periodEnd: '2024-12-01',
-      finalText: 'LG전자 48주차 주간 판매 현황. 가전제품 블랙프라이데이 특수로 전주 대비 35% 판매량 증가...',
-      hasEmbedding: true,
-      createdAt: '2024-12-02T09:00:00Z',
-    },
-  ],
-  'template-4': [],
-};
 
 export default function TemplatesPage() {
   const { user, loading: authLoading, signOut } = useAuth();
@@ -258,6 +68,15 @@ export default function TemplatesPage() {
   // 학습 데이터 상태
   const [cleanReports, setCleanReports] = useState<CleanReport[]>([]);
   const [loadingReports, setLoadingReports] = useState(false);
+
+  // Excel 미리보기 상태
+  const [excelPreview, setExcelPreview] = useState<ExcelPreviewData | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
+  // 에러 상태
+  const [companiesError, setCompaniesError] = useState<string | null>(null);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [reportsError, setReportsError] = useState<string | null>(null);
 
   // 아코디언 상태
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -289,10 +108,7 @@ export default function TemplatesPage() {
 
   // 회사 목록 불러오기
   const fetchCompanies = async () => {
-    if (USE_MOCK_DATA) {
-      setCompanies(MOCK_COMPANIES);
-      return;
-    }
+    setCompaniesError(null);
     try {
       const res = await fetch('/api/companies');
       const response = await res.json();
@@ -301,16 +117,13 @@ export default function TemplatesPage() {
       }
     } catch (error) {
       console.error('Failed to fetch companies:', error);
+      setCompaniesError('회사 목록을 불러오는 중 오류가 발생했습니다.');
     }
   };
 
   // 템플릿 목록 불러오기
   const fetchTemplates = async () => {
-    if (USE_MOCK_DATA) {
-      setTemplates(MOCK_TEMPLATES);
-      setLoading(false);
-      return;
-    }
+    setTemplatesError(null);
     try {
       const res = await fetch('/api/templates');
       const response = await res.json();
@@ -319,6 +132,7 @@ export default function TemplatesPage() {
       }
     } catch (error) {
       console.error('Failed to fetch templates:', error);
+      setTemplatesError('템플릿 목록을 불러오는 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
@@ -327,13 +141,7 @@ export default function TemplatesPage() {
   // 학습 데이터 불러오기
   const fetchCleanReports = async (templateId: string) => {
     setLoadingReports(true);
-    if (USE_MOCK_DATA) {
-      // Mock 데이터 사용 시 약간의 딜레이 추가
-      await new Promise(resolve => setTimeout(resolve, 300));
-      setCleanReports(MOCK_CLEAN_REPORTS[templateId] || []);
-      setLoadingReports(false);
-      return;
-    }
+    setReportsError(null);
     try {
       const res = await fetch(`/api/rag/clean-reports?templateId=${templateId}`);
       const response = await res.json();
@@ -345,20 +153,33 @@ export default function TemplatesPage() {
     } catch (error) {
       console.error('Failed to fetch clean reports:', error);
       setCleanReports([]);
+      setReportsError('학습 데이터를 불러오는 중 오류가 발생했습니다.');
     } finally {
       setLoadingReports(false);
+    }
+  };
+
+  // 템플릿 상세 (Excel 미리보기) 불러오기
+  const fetchTemplateDetail = async (templateId: string) => {
+    setLoadingPreview(true);
+    try {
+      const res = await fetch(`/api/templates/${templateId}`);
+      const response = await res.json();
+      if (response.success && response.data?.preview) {
+        setExcelPreview(response.data.preview);
+      } else {
+        setExcelPreview(null);
+      }
+    } catch {
+      setExcelPreview(null);
+    } finally {
+      setLoadingPreview(false);
     }
   };
 
   // 학습 데이터 삭제
   const handleDeleteCleanReport = async (reportId: string) => {
     if (!confirm('이 학습 데이터를 삭제하시겠습니까?')) return;
-
-    if (USE_MOCK_DATA) {
-      // Mock 모드에서는 로컬 상태만 업데이트
-      setCleanReports(prev => prev.filter(r => r.id !== reportId));
-      return;
-    }
 
     try {
       const res = await fetch(`/api/rag/clean-reports/${reportId}`, {
@@ -383,11 +204,13 @@ export default function TemplatesPage() {
     fetchTemplates();
   }, []);
 
-  // 선택된 템플릿이 변경되면 학습 데이터 조회
+  // 선택된 템플릿이 변경되면 상세 및 학습 데이터 조회
   useEffect(() => {
     if (selectedTemplate) {
+      fetchTemplateDetail(selectedTemplate.id);
       fetchCleanReports(selectedTemplate.id);
     } else {
+      setExcelPreview(null);
       setCleanReports([]);
     }
   }, [selectedTemplate]);
@@ -666,6 +489,30 @@ export default function TemplatesPage() {
             </div>
           </div>
 
+          {/* 에러 배너 */}
+          {(companiesError || templatesError) && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <p className="text-sm text-red-700">
+                  {companiesError || templatesError}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setLoading(true);
+                  fetchCompanies();
+                  fetchTemplates();
+                }}
+                className="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-all"
+              >
+                다시 시도
+              </button>
+            </div>
+          )}
+
           <div className="grid grid-cols-12 gap-6">
             {/* 템플릿 목록 - 회사별 그룹화 */}
             <div className="col-span-5">
@@ -806,9 +653,9 @@ export default function TemplatesPage() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
                             </svg>
                             <span className="font-medium text-green-800">Excel 구조 미리보기</span>
-                            {MOCK_EXCEL_PREVIEWS[selectedTemplate.id] && (
+                            {excelPreview && (
                               <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded">
-                                {MOCK_EXCEL_PREVIEWS[selectedTemplate.id].sheetName}
+                                {excelPreview.sheetName}
                               </span>
                             )}
                           </div>
@@ -816,73 +663,83 @@ export default function TemplatesPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
                         </button>
-                        {expandedSections.excel && MOCK_EXCEL_PREVIEWS[selectedTemplate.id] && (
+                        {expandedSections.excel && (
                           <div className="p-4 bg-white">
-                            {/* 인라인 Excel 테이블 */}
-                            <div className="border border-gray-300 rounded-lg overflow-auto max-h-64">
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="bg-gray-100">
-                                    <th className="w-10 px-2 py-1.5 border-r border-b border-gray-300 text-center text-gray-500 font-medium text-xs">
-                                      #
-                                    </th>
-                                    {MOCK_EXCEL_PREVIEWS[selectedTemplate.id].headers.map((_, idx) => (
-                                      <th
-                                        key={idx}
-                                        className="px-2 py-1.5 border-r border-b border-gray-300 text-center text-gray-500 font-medium text-xs min-w-[80px]"
-                                      >
-                                        {String.fromCharCode(65 + idx)}
-                                      </th>
-                                    ))}
-                                  </tr>
-                                  <tr className="bg-green-50">
-                                    <td className="px-2 py-1.5 border-r border-b border-gray-300 text-center text-gray-500 font-medium text-xs bg-gray-100">
-                                      1
-                                    </td>
-                                    {MOCK_EXCEL_PREVIEWS[selectedTemplate.id].headers.map((header, idx) => (
-                                      <td
-                                        key={idx}
-                                        className="px-2 py-1.5 border-r border-b border-gray-300 font-semibold text-green-800 text-xs"
-                                      >
-                                        {header}
-                                      </td>
-                                    ))}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {MOCK_EXCEL_PREVIEWS[selectedTemplate.id].rows.map((row, rowIdx) => (
-                                    <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                      <td className="px-2 py-1.5 border-r border-b border-gray-300 text-center text-gray-500 font-medium text-xs bg-gray-100">
-                                        {rowIdx + 2}
-                                      </td>
-                                      {row.map((cell, cellIdx) => (
-                                        <td
-                                          key={cellIdx}
-                                          className={`px-2 py-1.5 border-r border-b border-gray-300 text-xs ${
-                                            typeof cell === 'number' ? 'text-right font-mono' : ''
-                                          }`}
-                                        >
-                                          {formatNumber(cell)}
+                            {loadingPreview ? (
+                              <div className="text-sm text-green-500 text-center py-4">미리보기 불러오는 중...</div>
+                            ) : excelPreview ? (
+                              <>
+                                {/* 인라인 Excel 테이블 */}
+                                <div className="border border-gray-300 rounded-lg overflow-auto max-h-64">
+                                  <table className="w-full text-sm">
+                                    <thead>
+                                      <tr className="bg-gray-100">
+                                        <th className="w-10 px-2 py-1.5 border-r border-b border-gray-300 text-center text-gray-500 font-medium text-xs">
+                                          #
+                                        </th>
+                                        {excelPreview.headers.map((_, idx) => (
+                                          <th
+                                            key={idx}
+                                            className="px-2 py-1.5 border-r border-b border-gray-300 text-center text-gray-500 font-medium text-xs min-w-[80px]"
+                                          >
+                                            {String.fromCharCode(65 + idx)}
+                                          </th>
+                                        ))}
+                                      </tr>
+                                      <tr className="bg-green-50">
+                                        <td className="px-2 py-1.5 border-r border-b border-gray-300 text-center text-gray-500 font-medium text-xs bg-gray-100">
+                                          1
                                         </td>
+                                        {excelPreview.headers.map((header, idx) => (
+                                          <td
+                                            key={idx}
+                                            className="px-2 py-1.5 border-r border-b border-gray-300 font-semibold text-green-800 text-xs"
+                                          >
+                                            {header}
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {excelPreview.rows.map((row, rowIdx) => (
+                                        <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                          <td className="px-2 py-1.5 border-r border-b border-gray-300 text-center text-gray-500 font-medium text-xs bg-gray-100">
+                                            {rowIdx + 2}
+                                          </td>
+                                          {row.map((cell, cellIdx) => (
+                                            <td
+                                              key={cellIdx}
+                                              className={`px-2 py-1.5 border-r border-b border-gray-300 text-xs ${
+                                                typeof cell === 'number' ? 'text-right font-mono' : ''
+                                              }`}
+                                            >
+                                              {formatNumber(cell)}
+                                            </td>
+                                          ))}
+                                        </tr>
                                       ))}
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                            {/* 수식 정보 */}
-                            {MOCK_EXCEL_PREVIEWS[selectedTemplate.id].formulas && MOCK_EXCEL_PREVIEWS[selectedTemplate.id].formulas!.length > 0 && (
-                              <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-                                <p className="text-xs font-medium text-blue-700 mb-2">수식</p>
-                                <div className="flex flex-wrap gap-2">
-                                  {MOCK_EXCEL_PREVIEWS[selectedTemplate.id].formulas!.map((f, idx) => (
-                                    <span key={idx} className="text-xs bg-white px-2 py-1 rounded border border-blue-200">
-                                      <span className="text-blue-600 font-mono">{f.cell}</span>
-                                      <span className="text-gray-400 mx-1">=</span>
-                                      <span className="text-blue-800 font-mono">{f.formula}</span>
-                                    </span>
-                                  ))}
+                                    </tbody>
+                                  </table>
                                 </div>
+                                {/* 수식 정보 */}
+                                {excelPreview.formulas && excelPreview.formulas.length > 0 && (
+                                  <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+                                    <p className="text-xs font-medium text-blue-700 mb-2">수식</p>
+                                    <div className="flex flex-wrap gap-2">
+                                      {excelPreview.formulas.map((f, idx) => (
+                                        <span key={idx} className="text-xs bg-white px-2 py-1 rounded border border-blue-200">
+                                          <span className="text-blue-600 font-mono">{f.cell}</span>
+                                          <span className="text-gray-400 mx-1">=</span>
+                                          <span className="text-blue-800 font-mono">{f.formula}</span>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <div className="text-sm text-gray-400 text-center py-4">
+                                미리보기 데이터가 없습니다
                               </div>
                             )}
                           </div>
@@ -914,6 +771,16 @@ export default function TemplatesPage() {
                           <div className="p-4 bg-white">
                             {loadingReports ? (
                               <div className="text-sm text-purple-500">불러오는 중...</div>
+                            ) : reportsError ? (
+                              <div className="text-center py-4">
+                                <p className="text-sm text-red-500">{reportsError}</p>
+                                <button
+                                  onClick={() => selectedTemplate && fetchCleanReports(selectedTemplate.id)}
+                                  className="mt-2 text-xs text-red-600 hover:text-red-700 underline"
+                                >
+                                  다시 시도
+                                </button>
+                              </div>
                             ) : cleanReports.length > 0 ? (
                               <div className="space-y-2">
                                 {cleanReports.map((report) => (
