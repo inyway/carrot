@@ -643,8 +643,8 @@ export default function ConverterPage() {
         }
 
         const blob = await res.blob();
-        const ext = templateFile.format === 'xlsx' ? 'zip' : templateFile.format;
-        downloadBlob(blob, `reports_${Date.now()}.${ext}`);
+        const ext = templateFile.format;
+        downloadBlob(blob, `report_${Date.now()}.${ext}`);
       }
 
       alert('보고서 생성이 완료되었습니다!');
@@ -1429,7 +1429,7 @@ export default function ConverterPage() {
                           </span>
                         </div>
                         <span className="text-gray-400">
-                          총 {dataFile?.rowCount || previewData.length}개 보고서 생성 예정
+                          총 {dataFile?.rowCount || previewData.length}행 데이터 → 1개 보고서 생성
                         </span>
                       </div>
                     </div>

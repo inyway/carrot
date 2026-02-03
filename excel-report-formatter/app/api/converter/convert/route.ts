@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
-import { cellValueToString, safeExtractCellValue } from '@/lib/cell-value-utils';
+import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders } from '@/lib/cell-value-utils';
 
 const API_BASE_URL = process.env.NESTJS_API_URL || 'http://localhost:4000/api';
 
@@ -55,7 +55,7 @@ async function findSmartHeaderRow(
   return { headerRowNum: headerRow.rowNum, columns };
 }
 
-// Excel 데이터 추출
+// Excel 데이터 추출 (multi-row 헤더 지원)
 async function extractExcelData(
   buffer: Buffer,
   sheetName?: string
@@ -73,27 +73,19 @@ async function extractExcelData(
 
   const { headerRowNum } = await findSmartHeaderRow(worksheet);
 
-  // 컬럼 인덱스 매핑 생성
-  const headerRow = worksheet.getRow(headerRowNum);
-  const columnIndexToName: Array<{ colIndex: number; name: string }> = [];
+  // Multi-row 헤더 감지 + 복합 컬럼명 생성
+  const { compositeColumns, dataStartRow } = detectMultiRowHeaders(worksheet, headerRowNum);
 
-  headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const trimmed = cellValueToString(cell.value).trim();
-    if (trimmed.length > 0 && trimmed !== 'undefined') {
-      columnIndexToName.push({ colIndex: colNumber, name: trimmed });
-    }
-  });
-
-  const columns = columnIndexToName.map(c => c.name);
+  const columns = compositeColumns.map(c => c.name);
   const data: Record<string, unknown>[] = [];
 
   worksheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
-    if (rowNum <= headerRowNum) return;
+    if (rowNum < dataStartRow) return;
 
     const rowData: Record<string, unknown> = {};
     let hasData = false;
 
-    for (const { colIndex, name } of columnIndexToName) {
+    for (const { colIndex, name } of compositeColumns) {
       const cell = row.getCell(colIndex);
       const extracted = safeExtractCellValue(cell.value);
 

@@ -1,6 +1,111 @@
 import type * as ExcelJS from 'exceljs';
 
 /**
+ * Multi-row 헤더를 감지하고 복합 컬럼명을 생성합니다.
+ * 예: 3행 헤더에서 col5 → ["4월", "1회차", "14(Mo)"] → "4월_1회차_14(Mo)"
+ */
+export function detectMultiRowHeaders(
+  worksheet: ExcelJS.Worksheet,
+  primaryHeaderRowNum: number,
+  maxExtraRows: number = 5
+): {
+  headerRowNums: number[];
+  compositeColumns: Array<{ colIndex: number; name: string }>;
+  dataStartRow: number;
+} {
+  const headerRowNums: number[] = [primaryHeaderRowNum];
+
+  // primaryHeaderRowNum 행의 최대 컬럼 수 파악
+  const primaryRow = worksheet.getRow(primaryHeaderRowNum);
+  let maxCol = 0;
+  primaryRow.eachCell({ includeEmpty: true }, (_cell, colNumber) => {
+    if (colNumber > maxCol) maxCol = colNumber;
+  });
+
+  // 다음 행들을 순차 스캔하여 서브헤더 여부 판단
+  for (let offset = 1; offset <= maxExtraRows; offset++) {
+    const rowNum = primaryHeaderRowNum + offset;
+    if (rowNum > worksheet.rowCount) break;
+
+    const row = worksheet.getRow(rowNum);
+    let nonEmptyCount = 0;
+    let hasNumeric = false;
+    let hasFormula = false;
+    let hasDate = false;
+    let shortTextCount = 0;
+
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      const value = cell.value;
+      if (value === null || value === undefined) return;
+
+      nonEmptyCount++;
+
+      if (value instanceof Date) {
+        hasDate = true;
+        return;
+      }
+      if (typeof value === 'number') {
+        hasNumeric = true;
+        return;
+      }
+      if (typeof value === 'object' && value !== null && 'result' in value) {
+        hasFormula = true;
+        const result = (value as { result: unknown }).result;
+        if (typeof result === 'number') hasNumeric = true;
+        if (result instanceof Date) hasDate = true;
+        return;
+      }
+
+      // 텍스트 셀 - 짧은 텍스트인지 확인
+      const text = cellValueToString(value).trim();
+      if (text.length > 0 && text.length <= 15) {
+        shortTextCount++;
+      }
+    });
+
+    // 빈 행 → 스캔 중단
+    if (nonEmptyCount === 0) break;
+
+    // 숫자, 수식, 날짜가 있으면 → 데이터행 (스캔 중단)
+    if (hasNumeric || hasFormula || hasDate) break;
+
+    // 짧은 텍스트만 있으면 → 서브헤더
+    if (shortTextCount === nonEmptyCount) {
+      headerRowNums.push(rowNum);
+      continue;
+    }
+
+    // 그 외: 데이터행으로 판단, 스캔 중단
+    break;
+  }
+
+  const dataStartRow = headerRowNums[headerRowNums.length - 1] + 1;
+
+  // 각 열에 대해 모든 헤더행의 값을 수집, 복합 컬럼명 생성
+  const compositeColumns: Array<{ colIndex: number; name: string }> = [];
+
+  for (let col = 1; col <= maxCol; col++) {
+    const parts: string[] = [];
+
+    for (const rowNum of headerRowNums) {
+      const cell = worksheet.getRow(rowNum).getCell(col);
+      const text = cellValueToString(cell.value).trim();
+      if (text.length > 0 && text !== 'undefined') {
+        parts.push(text);
+      }
+    }
+
+    if (parts.length > 0) {
+      // 중복 제거 후 _로 조인
+      const unique = parts.filter((v, i, arr) => arr.indexOf(v) === i);
+      compositeColumns.push({ colIndex: col, name: unique.join('_') });
+    }
+  }
+
+  return { headerRowNums, compositeColumns, dataStartRow };
+}
+
+/**
  * ExcelJS 셀 값에서 실제 값을 안전하게 추출합니다.
  * formula, richText, hyperlink, error 등 다양한 셀 타입을 처리합니다.
  */

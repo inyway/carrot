@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
-import { cellValueToString, safeExtractCellValue } from '@/lib/cell-value-utils';
+import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders } from '@/lib/cell-value-utils';
 
 export const runtime = 'nodejs';
 
@@ -85,25 +85,21 @@ async function analyzeExcel(
   }
 
   // 스마트 헤더 감지
-  const { headerRowNum, columns } = await findSmartHeaderRow(worksheet);
+  const { headerRowNum } = await findSmartHeaderRow(worksheet);
+
+  // Multi-row 헤더 감지 + 복합 컬럼명 생성
+  const { compositeColumns, dataStartRow } = detectMultiRowHeaders(worksheet, headerRowNum);
+  const columns = compositeColumns.map(c => c.name);
 
   // 데이터 추출 (미리보기용 최대 100행)
   const preview: Record<string, unknown>[] = [];
   let rowCount = 0;
 
-  // 컬럼 인덱스 매핑 생성
-  const headerRow = worksheet.getRow(headerRowNum);
-  const columnIndexToName: Array<{ colIndex: number; name: string }> = [];
-
-  headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const trimmed = cellValueToString(cell.value).trim();
-    if (trimmed.length > 0 && trimmed !== 'undefined') {
-      columnIndexToName.push({ colIndex: colNumber, name: trimmed });
-    }
-  });
+  // 컬럼 인덱스 매핑은 compositeColumns에서 직접 사용
+  const columnIndexToName = compositeColumns;
 
   worksheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
-    if (rowNum <= headerRowNum) return;
+    if (rowNum < dataStartRow) return;
 
     rowCount++;
     if (preview.length < 100) {

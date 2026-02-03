@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
-import JSZip from 'jszip';
-import { cellValueToString, safeExtractCellValue } from '@/lib/cell-value-utils';
+import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders } from '@/lib/cell-value-utils';
 
 export const runtime = 'nodejs';
 
@@ -57,79 +56,7 @@ async function findSmartHeaderRow(
   return { headerRowNum: headerRow.rowNum, columns };
 }
 
-// 템플릿에서 실제 데이터 삽입 시작 행을 찾기
-// multi-row 헤더(서브헤더 등)를 건너뛰고 실제 데이터가 들어갈 첫 행을 결정
-function findFirstDataRow(
-  worksheet: ExcelJS.Worksheet,
-  headerRowNum: number,
-  maxScan: number = 20
-): number {
-  const lastRow = Math.min(headerRowNum + maxScan, worksheet.rowCount);
-
-  for (let rowNum = headerRowNum + 1; rowNum <= lastRow; rowNum++) {
-    const row = worksheet.getRow(rowNum);
-    let hasNumeric = false;
-    let hasFormula = false;
-    let hasDate = false;
-    let nonEmptyCount = 0;
-    let shortTextOnlyCount = 0;
-
-    row.eachCell({ includeEmpty: false }, (cell) => {
-      const value = cell.value;
-      if (value === null || value === undefined) return;
-
-      nonEmptyCount++;
-
-      if (value instanceof Date) {
-        hasDate = true;
-        return;
-      }
-
-      if (typeof value === 'number') {
-        hasNumeric = true;
-        return;
-      }
-
-      if (typeof value === 'object' && value !== null) {
-        // formula cell with numeric result
-        if ('result' in value) {
-          hasFormula = true;
-          const result = (value as { result: unknown }).result;
-          if (typeof result === 'number') hasNumeric = true;
-          if (result instanceof Date) hasDate = true;
-          return;
-        }
-      }
-
-      // 텍스트 셀 - 짧은 텍스트만 있으면 서브헤더로 판단
-      const text = cellValueToString(value).trim();
-      if (text.length > 0 && text.length <= 15) {
-        shortTextOnlyCount++;
-      }
-    });
-
-    // 빈 행은 건너뛰기
-    if (nonEmptyCount === 0) continue;
-
-    // 숫자, 수식, 날짜가 하나라도 있으면 → 데이터 행
-    if (hasNumeric || hasFormula || hasDate) {
-      return rowNum;
-    }
-
-    // 짧은 텍스트만 있으면 → 서브헤더로 판단, skip
-    if (shortTextOnlyCount === nonEmptyCount) {
-      continue;
-    }
-
-    // 그 외: 데이터 행으로 판단
-    return rowNum;
-  }
-
-  // 폴백: 헤더 바로 다음 행
-  return headerRowNum + 1;
-}
-
-// Excel 데이터 추출
+// Excel 데이터 추출 (multi-row 헤더 지원)
 async function extractExcelData(
   buffer: Buffer,
   sheetName?: string
@@ -147,27 +74,19 @@ async function extractExcelData(
 
   const { headerRowNum } = await findSmartHeaderRow(worksheet);
 
-  // 컬럼 인덱스 매핑 생성
-  const headerRow = worksheet.getRow(headerRowNum);
-  const columnIndexToName: Array<{ colIndex: number; name: string }> = [];
+  // Multi-row 헤더 감지 + 복합 컬럼명 생성
+  const { compositeColumns, dataStartRow } = detectMultiRowHeaders(worksheet, headerRowNum);
 
-  headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const trimmed = cellValueToString(cell.value).trim();
-    if (trimmed.length > 0 && trimmed !== 'undefined') {
-      columnIndexToName.push({ colIndex: colNumber, name: trimmed });
-    }
-  });
-
-  const columns = columnIndexToName.map(c => c.name);
+  const columns = compositeColumns.map(c => c.name);
   const data: Record<string, unknown>[] = [];
 
   worksheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
-    if (rowNum <= headerRowNum) return;
+    if (rowNum < dataStartRow) return;
 
     const rowData: Record<string, unknown> = {};
     let hasData = false;
 
-    for (const { colIndex, name } of columnIndexToName) {
+    for (const { colIndex, name } of compositeColumns) {
       const cell = row.getCell(colIndex);
       const extracted = safeExtractCellValue(cell.value);
 
@@ -236,7 +155,7 @@ function extractJsonData(buffer: Buffer): { columns: string[]; data: Record<stri
   throw new Error('JSON 구조를 인식할 수 없습니다.');
 }
 
-// Excel 템플릿 기반 보고서 생성
+// Excel 템플릿 기반 보고서 생성 (batch 모드 - 단일 .xlsx 출력)
 async function generateExcelReports(
   templateBuffer: Buffer,
   dataBuffer: Buffer,
@@ -245,16 +164,15 @@ async function generateExcelReports(
   dataFormat: string,
   templateSheet?: string,
   dataSheet?: string,
-  fileNameColumn?: string
 ): Promise<Buffer> {
-  // 템플릿 로드
-  const templateWorkbook = new ExcelJS.Workbook();
-  await templateWorkbook.xlsx.load(templateBuffer as unknown as ArrayBuffer);
+  // 템플릿 1회만 복제
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(templateBuffer as unknown as ArrayBuffer);
 
-  const targetTemplateSheet = templateSheet || templateWorkbook.worksheets[0]?.name;
-  const templateWs = templateWorkbook.getWorksheet(targetTemplateSheet);
+  const targetTemplateSheet = templateSheet || workbook.worksheets[0]?.name;
+  const ws = workbook.getWorksheet(targetTemplateSheet);
 
-  if (!templateWs) {
+  if (!ws) {
     throw new Error('템플릿 시트를 찾을 수 없습니다.');
   }
 
@@ -294,37 +212,32 @@ async function generateExcelReports(
     }
   }
 
-  // 템플릿의 헤더 행 찾기
-  const { headerRowNum: templateHeaderRow } = await findSmartHeaderRow(templateWs);
+  // 템플릿의 헤더 행 찾기 + multi-row 헤더 감지
+  const { headerRowNum: templateHeaderRow } = await findSmartHeaderRow(ws);
+  const { compositeColumns: templateCompositeColumns, dataStartRow: firstDataRow } =
+    detectMultiRowHeaders(ws, templateHeaderRow);
 
-  // 템플릿 컬럼 위치 매핑 (컬럼명 -> 열 인덱스)
+  // 템플릿 복합 컬럼명 → 열 인덱스 매핑
   const templateColumnIndex = new Map<string, number>();
-  const headerRow = templateWs.getRow(templateHeaderRow);
+  for (const { colIndex, name } of templateCompositeColumns) {
+    templateColumnIndex.set(name, colIndex);
+  }
 
-  headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const trimmed = cellValueToString(cell.value).trim();
-    if (trimmed) {
-      templateColumnIndex.set(trimmed, colNumber);
+  // 첫 번째 데이터 행의 스타일 저장 (후속 행에 복사용)
+  const firstRow = ws.getRow(firstDataRow);
+  const styleCache = new Map<number, Partial<ExcelJS.Style>>();
+  for (const { colIndex } of templateCompositeColumns) {
+    const cell = firstRow.getCell(colIndex);
+    if (cell.style) {
+      styleCache.set(colIndex, JSON.parse(JSON.stringify(cell.style)));
     }
-  });
+  }
 
-  // ZIP 생성
-  const zip = new JSZip();
-
-  // 각 데이터 행에 대해 개별 Excel 파일 생성
+  // 모든 데이터행을 하나의 워크시트에 순차 삽입
   for (let rowIdx = 0; rowIdx < dataRows.length; rowIdx++) {
     const rowData = dataRows[rowIdx];
-
-    // 새 워크북 생성 (템플릿 복사)
-    const newWorkbook = new ExcelJS.Workbook();
-    await newWorkbook.xlsx.load(templateBuffer as unknown as ArrayBuffer);
-
-    const newWs = newWorkbook.getWorksheet(targetTemplateSheet);
-    if (!newWs) continue;
-
-    // 데이터 행 위치 (multi-row 헤더를 건너뛰고 실제 데이터 삽입 위치 결정)
-    const dataRowNum = findFirstDataRow(newWs, templateHeaderRow);
-    const targetRow = newWs.getRow(dataRowNum);
+    const targetRowNum = firstDataRow + rowIdx;
+    const targetRow = ws.getRow(targetRowNum);
 
     // 매핑에 따라 데이터 채우기
     for (const [templateField, dataColumn] of Array.from(mappingMap.entries())) {
@@ -340,29 +253,21 @@ async function generateExcelReports(
         } else {
           cell.value = String(value ?? '');
         }
+
+        // 첫 데이터 행의 스타일 적용
+        const style = styleCache.get(colIndex);
+        if (style) {
+          cell.style = style as ExcelJS.Style;
+        }
       }
     }
 
     targetRow.commit();
-
-    // 파일명 결정
-    let fileName: string;
-    if (fileNameColumn && rowData[fileNameColumn]) {
-      // 파일명에 사용할 수 없는 문자 제거
-      fileName = String(rowData[fileNameColumn])
-        .replace(/[\/\\:*?"<>|]/g, '_')
-        .trim();
-    } else {
-      fileName = `report_${rowIdx + 1}`;
-    }
-
-    // Excel 파일을 버퍼로 변환
-    const fileBuffer = await newWorkbook.xlsx.writeBuffer();
-    zip.file(`${fileName}.xlsx`, fileBuffer);
   }
 
-  // ZIP 파일 생성
-  return Buffer.from(await zip.generateAsync({ type: 'nodebuffer' }));
+  // 단일 .xlsx 반환
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
 }
 
 // CSV 템플릿 기반 보고서 생성 (단일 CSV에 모든 데이터)
@@ -455,7 +360,6 @@ export async function POST(request: NextRequest) {
     const templateSheet = formData.get('templateSheet') as string | null;
     const dataSheet = formData.get('dataSheet') as string | null;
     const mappingsJson = formData.get('mappings') as string | null;
-    const fileNameColumn = formData.get('fileNameColumn') as string | null;
 
     if (!template) {
       return NextResponse.json({ error: '템플릿 파일이 없습니다.' }, { status: 400 });
@@ -487,7 +391,7 @@ export async function POST(request: NextRequest) {
     let fileName: string;
 
     if (actualTemplateFormat === 'xlsx') {
-      // Excel 템플릿 → ZIP (각 행별 Excel 파일)
+      // Excel 템플릿 → 단일 .xlsx (batch 모드)
       resultBuffer = await generateExcelReports(
         templateBuffer,
         dataBuffer,
@@ -496,10 +400,9 @@ export async function POST(request: NextRequest) {
         actualDataFormat,
         templateSheet || undefined,
         dataSheet || undefined,
-        fileNameColumn || undefined
       );
-      contentType = 'application/zip';
-      fileName = `reports_${Date.now()}.zip`;
+      contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      fileName = `report_${Date.now()}.xlsx`;
     } else if (actualTemplateFormat === 'csv') {
       // CSV 템플릿 → 단일 CSV
       resultBuffer = await generateCsvReports(
