@@ -31,8 +31,8 @@ export function detectMultiRowHeaders(
     let nonEmptyCount = 0;
     let hasNumeric = false;
     let hasFormula = false;
-    let hasDate = false;
     let shortTextCount = 0;
+    let dateCount = 0;
 
     row.eachCell({ includeEmpty: false }, (cell) => {
       const value = cell.value;
@@ -41,7 +41,7 @@ export function detectMultiRowHeaders(
       nonEmptyCount++;
 
       if (value instanceof Date) {
-        hasDate = true;
+        dateCount++;
         return;
       }
       if (typeof value === 'number') {
@@ -52,7 +52,6 @@ export function detectMultiRowHeaders(
         hasFormula = true;
         const result = (value as { result: unknown }).result;
         if (typeof result === 'number') hasNumeric = true;
-        if (result instanceof Date) hasDate = true;
         return;
       }
 
@@ -66,11 +65,11 @@ export function detectMultiRowHeaders(
     // 빈 행 → 스캔 중단
     if (nonEmptyCount === 0) break;
 
-    // 숫자, 수식, 날짜가 있으면 → 데이터행 (스캔 중단)
-    if (hasNumeric || hasFormula || hasDate) break;
+    // 숫자, 수식이 있으면 → 데이터행 (스캔 중단)
+    if (hasNumeric || hasFormula) break;
 
-    // 짧은 텍스트만 있으면 → 서브헤더
-    if (shortTextCount === nonEmptyCount) {
+    // 짧은 텍스트 + 날짜만 있으면 → 서브헤더 (날짜를 레이블로 취급)
+    if (shortTextCount + dateCount === nonEmptyCount) {
       headerRowNums.push(rowNum);
       continue;
     }

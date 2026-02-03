@@ -1,0 +1,680 @@
+,* 15? ?? ? ???? ??? ?????,,,,
+,1? ??) ,???? ??? ???? ???.  ,,,
+,"2,3,4? ??)"," A? Survey ?? > C? Topic?? ???? ?? 1,2,3 (F?~H?)",,=> ??? ??? Survey?? ??? ??? ??? Topic (C?) ?? ?? ??,
+,"5,6,7?","A? Unexpected ?? > C? Topic?? ???? ?? 1,2,3 (F?~H?)",,,
+,?? ??? ??,1~6 ?? ? ?? ?? ???? ??? ?? ?? > ?? ??? ?? ???? ????? ?,,=> 8? ?? ????? ??? ??? ??? ??? ?? ? ??? ???,
+,"8,9,10","A? Unexpected ?? > B? Level ???? ?? 1,2,3 (F?~H?)",,,
+,"11,12,13","A? Role-Play ??  >  B? Level > C? Topic?? ???? ?? 1,2,3 (F?~H?)",,,
+,"14,15","A? Advanced??  > B? Level ???? ?? 1,2 (F?~G?)	",,,
+,,,,,
+Type,Level,Topic,?? 1,?? 2,?? 3
+1?,All,Self Introduction,Tell me a little bit about yourself.,,
+Unexpected,5,Food,Many people try to eat healthy these days. What kinds of foods are healthy and why are they healthy for us?,How do you shop for healthy food? What kinds of things do you have to do to cook healthy food?,"Tell me how you found out about eating healthy. Did your family eat healthy when you were growing up?
+Did your friend become healthier by eating healthy food? Describe in detail how you started to eat healthy."
+Unexpected,5,Food,What are some of the typical foods in your country? What dishes are popular?,What do you eat on a regular day? Tell me everything that you eat in detail.,Tell me about a memorable experience you had while eating something. It could have been something good or bad. What happened? Why was it so memorable or special? Tell me everything in as much detail as possible.
+Unexpected,6,Food,Many people try to eat healthy these days. What kinds of foods are healthy and why are they healthy for us?,"Tell me how you found out about eating healthy. Did your family eat healthy when you were growing up?
+Did your friend become healthier by eating healthy food? Describe in detail how you started to eat healthy.",When was the last time you had some healthy food? Who was it with and how did you feel? What was special about that experience?
+Unexpected,5,Furniture,Tell me about the furniture you have in your home. Is there a piece that is your favorite?,Tell me about how you use your furniture on a typical day. What kinds of things do you do with your furniture?,Tell me about the furniture that you had in your childhood home. Was there anything different from the furniture that you have today? Describe for me what your home looked like at that time.
+Unexpected,5,Furniture,Tell me about how you use your furniture on a typical day. What kinds of things do you do with your furniture?,Tell me about the furniture that you had in your childhood home. Was there anything different from the furniture that you have today? Describe for me what your home looked like at that time.,"Sometimes, problems arise when it comes to furniture. Things might break, the fabric might get stained or ripped. Tell me about a time when you had a problem with a piece of furniture. Tell me everything that happened and how you fixed the problem."
+Unexpected,6,Gathering,Tell me about some of the gatherings or celebrations that happen at where you live.,"Tell me about a gathering or a celebration that was held in the area in which you live. Describe where the gathering was held, who was there, what the purpose of the gathering was,and what happened from beginning to end.","Sometimes when people get together for celebrations or gatherings, unexpected things can happen. Tell me all about something unexpected that happened at a celebration or a gathering in the area where you live. Tell me what happened from beginning to end."
+Unexpected,6,Gathering,"Where do people usually have celebrations or parties in the area where you live or work? Is it at someone's home, or a park, or somewhere else? Tell me everything about that place in as much detail as you can.","Tell me about the last holiday party or celebration that you attended. Give me lots of details about what happened, who was there, and what you did from beginning to end.","Tell me about a time when you helped prepare a party or a celebration. Perhaps, you helped invite people, or you helped decorate, or get the food or drinks. Tell me about this experience from the beginning to the end in detail."
+Unexpected,5,Geography,"Describe your country s geography for me. Are there mountains, lakes, or rivers? What is your country like?","Tell me about the outdoor activities that are popular in your country. Do people go hiking, bike or swim? What do people typically do outdoors?","Tell me about an early memory of your countrys geography. Perhaps, you visited a special place or went to an important natural landmark. Describe what you saw when you visited that special place."
+Unexpected,5,Geography,"Tell me a little bit about a country close to your own country. Tell me what the country looks like, about its people and some of its traditions.",Please tell me about what kinds of free time activities people in your country do.,People often have memorable and moving experiences when they explore their countrys geography. You might climb a famous mountain or swim at a beautiful beach. Tell me the story of a memorable time you had while visiting a natural place in your country.
+Unexpected,6,Geography,"Describe your country s geography for me. Are there mountains, lakes, or rivers? What is your country like?",I’d like you to pick a favorite place in your country from your childhood and describe that place for me. What are your memories of that place? What was it like when you were a child?,People often have memorable and moving experiences when they explore their countrys geography. You might climb a famous mountain or swim at a beautiful beach. Tell me the story of a memorable time you had while visiting a natural place in your country.
+Unexpected,6,Geography,"Tell me a little bit about a country close to your own country. Tell me what the country looks like, about its people and some of its traditions.",I’d like you to pick a favorite place in your country from your childhood and describe that place for me. What are your memories of that place? What was it like when you were a child?,"How has your country changed in the past decade? Choose one area of change and provide a lot of details about urban development, tourism, or any other area."
+Unexpected,5,Health,Tell me about the kinds of foods healthy people eat. What foods are they? Where do they buy these foods?,Tell me about all the things you do in order to stay healthy.,Ideas about what good health is and how to maintain it change frequently. What did people do to maintain good health when you were a child? What was considered to be a healthy diet at that time? How did people usually exercise? Describe how our ideas of what is healthy have changed overtime.
+Unexpected,5,Health,Tell me about a local health food store in your neighborhood. What does this place look like?,"What are the eating habits of healthy people? What do they usually eat during the week, for breakfast, lunch, dinner, snacks, etc?",Ideas about what good health is and how to maintain it change frequently. What did people do to maintain good health when you were a child? What was considered to be a healthy diet at that time? How did people usually exercise? Describe how our ideas of what is healthy have changed overtime.
+Unexpected,6,Health,Tell me about someone you know who is very healthy. What is that person like?,Tell me about a time when you or someone you know did something new to become healthier. Maybe it was playing a sport or eating some healthy food. Tell me about the change in detail.,People do a lot of things to try to be healthy. They might join a healthy cooking class or join a new exercise program. Tell me about something you have done to try to improve your health. Tell me why you chose that particular activity and how it all worked out.
+Unexpected,5,Internet,"What do people usually do on the Internet? Do they play games, watch television, etc? Talk about the things people do online in detail.","What are your usual habits when you are online? Do you usually share videos, do your shopping, read the news, etc? What do you usually do online?",When did you first become interested in surfing the Internet? Tell me about your first experience or experiences of surfing the Internet in great detail. What were your first impressions of it? What do you remember about it?
+Unexpected,5,Internet,"What are your usual habits when you are online? Do you usually share videos, do your shopping, read the news, etc? What do you usually do online?",Tell me about your favorite website or type of website you visit. Why do you like it? Give me as many details as you can.,When did you first become interested in surfing the Internet? Tell me about your first experience or experiences of surfing the Internet in great detail. What were your first impressions of it? What do you remember about it?
+Unexpected,5,Internet,"What kinds of videos do you like to watch online for fun, for work or for school? Tell me about the kinds of videos you like to watch online.",Tell me about your typical routine online. What do you do? Tell me about your online activities.,"Describe something memorable you saw online for work or for leisure. Maybe it was something impressive, unusual, humorous or meaningful for you. What did you notice about it? What made it special?"
+Unexpected,6,Internet,"What are your usual habits when you are online? Do you usually share videos, do your shopping, read the news, etc? What do you usually do online?",When did you first become interested in surfing the Internet? Tell me about your first experience or experiences of surfing the Internet in great detail. What were your first impressions of it? What do you remember about it?,"Tell me about a project that you worked on that involved doing research on the Internet. Start with giving me some background about the project? when and where it was. And then, tell me how you used the Internet to get the project done."
+Unexpected,6,Internet,"What are your usual habits when you are online? Do you usually share videos, do your shopping, read the news, etc? What do you usually do online?","Describe something memorable you saw online for work or for leisure. Maybe it was something impressive, unusual, humorous or meaningful for you. What did you notice about it? What made it special?","Tell me about a project that you worked on that involved doing research on the Internet. Start with giving me some background about the project? when and where it was. And then, tell me how you used the Internet to get the project done."
+Unexpected,5,Recycling,I'd like to know about how recycling is practiced in your country. What do people spccofically do? Tell me how things are recycled.,Recycling is a common practice. Tell me about all the different kinds of things that you recycle.,Tell me what recycling was like when you were a child. Did your family recycle? Was there a particular place to bring the recyclables? Did you have special containers? Describe what it was like and what you did in detail.
+Unexpected,5,Recycling,Recycling is a common practice. Tell me about all the different kinds of things that you recycle.,Tell me what recycling was like when you were a child. Did your family recycle? Was there a particular place to bring the recyclables? Did you have special containers? Describe what it was like and what you did in detail.,"Problems sometimes occur while recycling. Perhaps, the pick-up service did not come as planned. Or, the items were too big for the containers. Or, the container turned over and spilled the items. Tell me about something memorable that happened to you or your family."
+Unexpected,6,Recycling,I'd like to know about how recycling is practiced in your country. What do people spccofically do? Tell me how things are recycled.,Recycling is a common practice. Tell me about all the different kinds of things that you recycle.,"Can you tell me about a story or an experience you had related to recycling? Maybe something went wrong with recycling, or you might have had a discussion with a friend who disagrees with recycling. Describe your experience in detail."
+Unexpected,5,Restaurant,Tell me about a restaurant near where you live. What kind of food does it serve? How are the prices? How often do you go there? Give me as much detail as you can about one of your favorite local places to eat.,Describe your favorite restaurant that has an ethnic or international menu. Tell me everything about that place in as much detail as possible.,When was the last time you ate at a restaurant with an international menu? Where was it? Who were you with? What did you eat? Tell me the entire story of that visit to that restaurant.
+Unexpected,5,Restaurant,Tell me about the restaurants in your country. What is a typical restaurant like?,"Tell me about what you usually do when you eat at a restaurant. What do you do first, second, etc?",Describe for me a restaurant that you remember from your childhood. What was the restaurant like? Was it different from the restaurants you visit today?
+Unexpected,6,Restaurant,Talk about your favorite take-out or delivery food restaurant. What is the place like? What kind of food do they commonly offer?,Talk about the last time you used a take-out or delivery food service. What did you get and where was it? What do you remember about that experience?,Talk about a time when you used a take-out or a delivery service for a special occasion involving a large number of people. What was the occasion? What did you have to do to use the service? Tell me about that experience in as much detail as possible.
+Survey,5,Domestic Trips,You indicated in the survey that you take vacations domestically. Tell me some of the places you like to travel and why you like going there.,Can you tell me all the things you do in order to prepare to take trips?,"Traveling can lead to many kinds of interesting, funny and unexpected experiences. Tell me about one travel experience you had that was unforgettable. Start by telling me when this happened, where you were, and who you were with. Then, tell me about all the things that happened that made this experience so unforgettable."
+Survey,5,Domestic Trips,You indicated in the survey that you take vacations domestically. Tell me some of the places you like to travel and why you like going there.,Can you tell me all the things you do in order to prepare to take trips?,Tell me about some of the trips that you took in your youth. Where did you go? Who did you go with? And what did you see or do during those early trips?
+Survey,6,Domestic Trips,You indicated in the survey that you take vacations domestically. Tell me some of the places you like to travel and why you like going there.,Tell me about some of the trips that you took in your youth. Where did you go? Who did you go with? And what did you see or do during those early trips?,"Traveling can lead to many kinds of interesting, funny and unexpected experiences. Tell me about one travel experience you had that was unforgettable. Start by telling me when this happened, where you were, and who you were with. Then, tell me about all the things that happened that made this experience so unforgettable."
+Survey,5,Housing ,I would like to now talk about where you live. Can you describe your home to me? What does it look like? How many rooms does it have? Give me a description with lots of details.,What is your normal routine at home? What do you usually do during the weekdays? What kinds of things do you do on the weekend?,Describe the home you lived in as a child. How was that home different from the home you live in now?
+Survey,5,Housing ,I would like to now talk about where you live. What is your favorite room in your home? What does it look like?,Tell me what you do to keep your house clean and comfortable. What kinds of housework do you do around your home?,Describe the home you lived in as a child. How was that home different from the home you live in now?
+Survey,5,Housing ,I would like to now talk about where you live. Can you describe your home to me? What does it look like? How many rooms does it have? Give me a description with lots of details.,What is your normal routine at home? What do you usually do during the weekdays? What kinds of things do you do on the weekend?,"There are always problems which happen in any home. Things break, projects do not go as planned, or people you live with don’t cooperate. Tell me about some problems or issues that have happened in your home."
+Survey,6,Housing ,I would like to now talk about where you live. What is your favorite room in your home? What does it look like?,Describe the home you lived in as a child. How was that home different from the home you live in now?,"Sometimes, we want to change something in our home. Maybe we could get new furniture or do some painting or decorating. Tell me about one change that you made in your home. Tell me why you decided to make that change and everything you had to do to make that change happen."
+Survey,6,Housing ,I would like to now talk about where you live. What is your favorite room in your home? What does it look like?,Tell me about a house or apartment where you grew up in. What did your home and the surrounding area look like when you were young? How has it changed?,"Talk about a special memory you had with your family members at home. Maybe it was something
+funny,surprising, or important that happened. Tell me about that moment that stands out in your memory. Give me lots of details."
+Survey,6,Housing ,I would like to now talk about where you live. Can you describe your home to me? What does it look like? How many rooms does it have? Give me a description with lots of details.,"There are always problems which happen in any home. Things break, projects do not go as planned, or people you live with don’t cooperate. Tell me about some problems or issues that have happened in your home.","Pick one of those problems you just mentioned and explain to me everything that happened. Start with when it happened and anything that may have caused the problem. Then, explain in detail everything you did to resolve the problem."
+Survey,5,movie,You indicated in the survey that you go to movies with adults. Tell me about the kinds of movies that you like to see.,Tell me what you usually do when you go to see movies. Who do you like to go with? What do you do before and after the movie?,"I would like to know about the last time you went to the movies. Tell me everything that happened that day,including all the things you did before and after the movie."
+Survey,6,movie,You indicated in the survey that you go to movies with adults. Tell me about the kinds of movies that you like to see.,"I would like to know about the last time you went to the movies. Tell me everything that happened that day,including all the things you did before and after the movie.","What was a memorable movie you watched in the past? What was it about? What was special about that movie? 
+Would you recommend that movie to other people?"
+Survey,6,movie,You indicated in the survey that you go to movies with adults. Tell me about the kinds of movies that you like to see.,"I would like to know about the last time you went to the movies. Tell me everything that happened that day,including all the things you did before and after the movie.","Who is one of your favorite actors? Tell me a specific story about something this actor did that you heard about in the news. Begin the story with some details about the actor or the actress. And then, tell me all the details of what happened, especially things that made this incident so interesting to movie fans."
+Survey,5,Music,You indicated in the survey that you listen to music. What kinds of music do you listen to? Who are some of your favorite musicians and[or] composers?,When and where do you usually go to listen to music? Do you listen to radio? Do you go to concerts? Tell me about the different ways you enjoy music.,When did you first become interested in music? What kinds of music did you like first? Tell me how your interest in music developed from your childhood until today.
+Survey,6,Music,You indicated in the survey that you listen to music. What kinds of music do you listen to? Who are some of your favorite musicians and[or] composers?,When did you first become interested in music? What kinds of music did you like first? Tell me how your interest in music developed from your childhood until today.,Could you think back to a particularly memorable time when you heard live music? Describe that experience in detail. When was it? Where were you? Who were you with? Who did you hear? What happened that made that performance so memorable?
+Survey,5,Overseas Trips,You indicated in the survey that you take vacations internationally. Can you describe for me one of the countries or cities you’ve visited? What does it look like? And what are the people like there?,Can you tell me about the things you like to do when visiting another country?,Describe for me your first trip to another country. When was the trip? Where did you go? Who did you go with and what did you do? Describe that experience for me in as much detail as possible.
+Survey,6,Overseas Trips,You indicated in the survey that you take vacations internationally. Can you describe for me one of the countries or cities you’ve visited? What does it look like? And what are the people like there?,Think about another country that you visited when you were young. Describe what that country was like with lots of details. What were your impressions of that place?,
+Survey,6,Overseas Trips,You indicated in the survey that you take vacations internationally. Can you describe for me one of the countries or cities you’ve visited? What does it look like? And what are the people like there?,Think about another country that you visited when you were young. Describe what that country was like with lots of details. What were your impressions of that place?,Tell me about a popular place tourists like to go to when traveling outside your country. Why do they like visiting those locations?
+Survey,5,Shopping,"You indicated in the survey that you go shopping. Tell me about stores or shopping centers in your country.
+What are these places like?",Where do you go when you go shopping for something? What do you buy when you go there? What is special about that place?,Think about your early memories of shopping. Is there a store or a market that you remember from your childhood? Describe this place for me. What did it look like? What was your impression of the place?
+Survey,5,Shopping,"You indicated in the survey that you go shopping. Tell me about stores or shopping centers in your country.
+What are these places like?",Describe a typical shopping day for you. Tell me everything you do from the moment you leave home until you return.,"Tell me about your early memories of shopping and how you came to enjoy it so much. You could include information about where and when you used to shop,the people you went shopping with, what kinds of things you used to do while shopping or anything else that would give a clear picture of that experience."
+Survey,5,Shopping,"You indicated in the survey that you go shopping. I’d like to know more about your interest in shopping.
+Where do you go? Who do you shop with?",Describe a typical shopping day for you. Tell me everything you do from the moment you leave home until you return.,"Tell me about your early memories of shopping and how you came to enjoy it so much. You could include information about where and when you used to shop,the people you went shopping with, what kinds of things you used to do while shopping or anything else that would give a clear picture of that experience."
+Survey,6,Shopping,"You indicated in the survey that you go shopping. Tell me about stores or shopping centers in your country.
+What are these places like?","Tell me about your early memories of shopping and how you came to enjoy it so much. You could include information about where and when you used to shop,the people you went shopping with, what kinds of things you used to do while shopping or anything else that would give a clear picture of that experience.","Sometimes, funny or unexpected things happen while shopping. Tell me the story of a memorable shopping experience you had. Maybe you saw a friend at a store, maybe the item you bought was broken or did not work."
+Survey,6,Shopping,"You indicated in the survey that you go shopping. I’d like to know more about your interest in shopping.
+Where do you go? Who do you shop with?","When was the last time you went to shop for something? Where did you go and what did you buy?
+Who did you go with? What was special about that shopping experience?","Tell me about your early memories of shopping and how you came to enjoy it so much. You could include information about where and when you used to shop,the people you went shopping with, what kinds of things you used to do while shopping or anything else that would give a clear picture of that experience."
+Survey,5,TV,Tell me about the kinds of TV shows or movies you like to watch.,Tell me what you usually do when you watch TV shows or movies. When do you watch it? Who do you watch it with? Where do you watch it? Tell me about your typical routine when you watch TV shows or movies. ,TV shows have definitely changed over time. Describe for me a TV show that you remember from your childhood. What was the show like? How was it different from the TV shows that are popular today? 
+Survey,5,TV,Tell me about the kinds of TV shows or movies you like to watch.,Pick your favorite TV or movie character and tell me all the things that character does in the show or movie.,"Tell me how you first became interested in watching TV or movies,and how that interest has changed or developed from when you first became interested until today."
+Survey,6,TV,Tell me about the kinds of TV shows or movies you like to watch.,"Tell me how you first became interested in watching TV or movies,and how that interest has changed or developed from when you first became interested until today.","Can you tell me about a TV show or a movie that was particularly memorable? What was it and who was in it?
+Where did the action take place? What happened and why was it so memorable for you? Give me the details starting from the beginning to the end."
+Survey,6,TV,Tell me about the kinds of TV shows or movies you like to watch.,TV shows have definitely changed over time. Describe for me a TV show that you remember from your childhood. What was the show like? How was it different from the TV shows that are popular today? ,"Can you tell me about a TV show or a movie that was particularly memorable? What was it and who was in it?
+Where did the action take place? What happened and why was it so memorable for you? Give me the details starting from the beginning to the end."
+Survey,5,Vacation at Home,You indicated in the survey that you stay at home for vacations. Who are the people you would like to see and spend time with on your vacation?,Describe some of the things that you would like to do with people you visit or see during your vacation.,Describe exactly what you did during the last vacation that you spent at home. Give me a description from the first to the last day of all the people you saw and everything that you did.
+Survey,6,Vacation at Home,You indicated in the survey that you stay at home for vacations. Who are the people you would like to see and spend time with on your vacation?,Describe exactly what you did during the last vacation that you spent at home. Give me a description from the first to the last day of all the people you saw and everything that you did.,"Could you tell me about an unusual, unexpected, or satisfying experience you had while at home on vacations?
+Tell me all the details of that experience. What happened? Who was involved? And why was this experience somemorable?"
+Role-play,5,Appointment,People often have appointments for different things. Tell me about the kinds of places you go for different appointments.,What kinds of things do you do when you make appointments? Tell me what you exactly do when you make these appointments.,"Tell me about an appointment you remember from your childhood. Maybe you visited a doctor, the dentist, or a new school. Tell me about the place you went to for this appointment. What were your impressions? How did you feel?"
+Role-play,6,Appointment,People often have appointments for different things. Tell me about the kinds of places you go for different appointments.,"Tell me about an appointment you remember from your childhood. Maybe you visited a doctor, the dentist, or a new school. Tell me about the place you went to for this appointment. What were your impressions? How did you feel?","Sometimes, funny or surprising things happen during an appointment. Tell me about an appointment that you remember for some reason. Tell me everything that happened and why this appointment was so memorable."
+Role-play,5,Bank,Tell me about the banks in your country. What do they typically look like? Where are they usually located?,Tell me about the kinds of things you usually do when you go to the bank.,Banks have definitely changed over time. Tell me about a bank you remember from your childhood. What was the bank like? How was it different from banks today?
+Role-play,6,Bank,I’d like to give you a situation and ask you to act it out. You need to open a new bank account. Call the bank and ask the teller three to four questions about opening a new account.,"I’m sorry, but there is a problem which I need you to resolve. You just got your credit card, but found out that there is something wrong with it. Call the bank, explain the situation and solve the problem.",That's the end of the situation. Have you ever had any problems with your bank card when you were using banking machines or ATMs? Describe the problem you had in detail.
+Role-play,6,Bank,I’d like to give you a situation and ask you to act it out. You need to open a new bank account. Call the bank and ask the teller three to four questions about opening a new account.,"I’m sorry, but there is a problem which I need you to resolve. You just got your credit card, but found out that there is something wrong with it. Call the bank, explain the situation and solve the problem.",That's the end of the situation. Have you ever had any problems with your bank card when you were using banking machines or ATMs? Describe the problem you had in detail.
+Role-play,6,Bank,Tell me about the banks in your country. What do they typically look like? Where are they usually located?,Banks have definitely changed over time. Tell me about a bank you remember from your childhood. What was the bank like? How was it different from banks today?,"Sometimes, problems arise when dealing with the bank. Tell me in detail about a problem you had that involved your bank. Maybe the bank was closed when you needed it to be open. Maybe the bank made some kind of mistake. Tell me the story of a time when you had to solve a problem involving your bank."
+Role-play,6,Car Problem,I’d like to give you a situation and ask you to act it out. You are driving your car through a small town and have car trouble. Go to the nearest service station and ask for help. Ask three or four questions in order to get the information you need to get your car fixed.,"I'm sorry, but there is a problem which I need you to resolve. Because of the car trouble, you will miss an important business meeting. Call your client and explain the situation and offer some alternative solutions. ",That's the end of the situation. Tell me about the last time you had trouble with your car. What was the problem and how did you deal with it? Give me lot of details.
+Role-play,6,Company Interview,"I'd like to give you a situation and ask you to act it out. Imagine that you have an interview for a job at a very important company. To prepare for the interview, you want to learn more about the company. Call the company and ask three or four questions to learn more about it. ","I'm sorry, but there is a problem which I need you to resolve. Due to an emergency, you will not be able to attend your job interview. Call the company and leave a message explaining the situation. And then, offer two or three alternate plans so that you do not lose this opportunity.","Thats the end of the situation. Have you ever had to miss a class, a meeting or an interview at school or for work? Tell me the story of that experience. When did it happen and how did you resolve the situation? Give me lots of details"
+Role-play,5,Fashion,What kinds of clothes do people in your country typically wear? Are there different clothes for work and for play? Tell me about the clothes in your country.,What kinds of clothes do you like to wear personally? What are you wearing today? What kind of fashion style do you like? Give me all the details about your fashion style.,"Fashions is always changing. Tell me about the kinds of clothes that were popular when you were younger.
+What did the styles look like? How are they different from what is popular now?"
+Role-play,5,Fashion,What kinds of clothes do people in your country typically wear? Are there different clothes for work and for play? Tell me about the clothes in your country.,What do you do when you go shopping? Where do you go and what do you look for? Tell me about your typical shopping habits in detail.,"Tell me about the last time you bought a new piece of clothing. What did you need and where did you find it? 
+Were there any challenges or problems? Give me all the details."
+Role-play,5,Fashion,What kinds of clothes do people in your country typically wear? Are there different clothes for work and for play? Tell me about the clothes in your country.,What do you do when you go to buy new clothes? Where do you go? Who do you go with? Tell me everything about what you do when you buy new clothes.,"Fashions is always changing. Tell me about the kinds of clothes that were popular when you were younger.
+What did the styles look like? How are they different from what is popular now?"
+Role-play,6,Fashion,What kinds of clothes do people in your country typically wear? Are there different clothes for work and for play? Tell me about the clothes in your country.,"Fashions is always changing. Tell me about the kinds of clothes that were popular when you were younger.
+What did the styles look like? How are they different from what is popular now?","Tell me about the last time you bought a new piece of clothing. What did you need and where did you find it? 
+Were there any challenges or problems? Give me all the details."
+Role-play,6,Fitness Center / Gym,I’d like to give you a situation and ask you to act it out. You want to enroll for a class at a fitness center. Call the fitness center and ask questions about their programs.,"I’m sorry, but there is a problem which I need you to resolve. There is an emergency, and you cannot make it to the session with your personal trainer. Call your trainer and explain the situation. Give some alternatives to make arrangements for a schedule change.",Thats the end of the situation. Have you ever tried anything to become healthier? Tell me everything that you did to improve your health.
+Role-play,6,Flight,"I’d like to give you a situation and ask you to act it out. You have arrived at the airport, but your flight has been delayed for two hours. Go to the counter and ask the person there three or four questions about the delay.","I'm sorry, but there is a problem which I need you to resolve. Because of the flight delay, you cannot attend a business meeting. Call your client, explain the situation, and offer some alternatives to solve the problem.",That's the end of the situation. Have you ever encountered any difficulties during a trip? Tell me about that experience and what you did to deal with that difficulty. Give me all the details about that experience.
+Role-play,5,Free time,"Tell me about some places people in your country like to spend their free time. Do they visit parks, beaches or other places? What are some popular free time locations?",What do people in your country like to do in their free time? What are some popular free time activities?,Do you have more or less free time now than you did in the past? Describe for me how your free time has changed over time.
+Role-play,6,Free time,"Tell me about some places people in your country like to spend their free time. Do they visit parks, beaches or other places? What are some popular free time locations?",Do you have more or less free time now than you did in the past? Describe for me how your free time has changed over time.,"Tell me about the last time you had some free time. What did you do? Who did you spend your free time with?
+Tell me everything that happened the last time you had some free time."
+Role-play,6,Free time,What do people in your country like to do in their free time? What are some popular free time activities?,Do you have more or less free time now than you did in the past? Describe for me how your free time has changed over time.,"Tell me about the last time you had some free time. What did you do? Who did you spend your free time with?
+Tell me everything that happened the last time you had some free time."
+Role-play,6,Furniture,I’d like to give you a situation and ask you to act it out. You want to buy a new piece of furniture for your home. Speak to the store clerk and describe what you want. Ask three or four questions about the furniture they have for sale. ,"I’m sorry, but there is a problem which I need you to resolve. when you get your new furniture at your home, you realize that there is a serious problem. Call the store and explain the problem in detail. Then, make some suggestions as to how you can resolve the problem as quickly as possible.",Thats the end of the situation.  Have you ever bought furniture that wasn't what you had expected? Maybe you got the wrong color or maybe it didn't fit in the space you had for it. Tell me about a time when you had a problem with a new piece of furniture. 
+Role-play,6,Gathering,"I’d like to give you a situation and ask you to act it out. You want to meet up with your friend on the weekend.
+Call your friend and ask two or three questions about what you can do together and when you want to meet.","I'm sorry, but there is a problem which I need you to resolve. You are unable to meet your friend at the time and place that was agreed upon. Call your friend and give three or four alternatives to address the problem.",That's the end of the situation. Was there a time when you had to cancel your plans with someone? Maybe the weather was bad. Maybe you had work or chores that took up your free time. What did you do to deal with the situation that unexpectedly took up your free time?
+Role-play,6,Health food ,There is a new health food store in your town. Call the store and ask three or four questions to learn more about the store.,"After purchasing a food item at the store, you have discovered that something is wrong with the item. Call the store and explain the problem in detail and propose a solution.","We sometimes have interesting experiences when we have meals with family, friends or co-workers. Tell me about a memorable meal you had. Who were you with and where did you have the meal? What kind of food did you have?"
+Role-play,6,Hopsital,"I’d like to give you a situation and ask you to act it out. You would like to make an appointment to see the doctor. Call the doctor's office and ask three or four questions about the things you need to know. And then, set a time to go see the doctor.","I’m sorry, but there is a problem which I need you to resolve. Something has come up that prevents you from going in to see the doctor. Call the doctor’s office and explain the situation. Give two to three alternatives to make a new appointment with the doctor.","Thafs the end of the situation. Have you ever missed an important appointment or a meeting, or was late for it?
+What happened and what did you do? Give me all the details about that experience."
+Role-play,5,Hotel,Tell me about the hotels in your country. What are those places like?,"Tell me what you typically do when you go to a hotel. What do you do first, second, et cetera? When do you usually stay at hotels?",People often have memories of especially beautiful and interesting hotels. Tell me about a hotel that you remember for some reason. Where was it? What did it look like? Describe it for me in as much detail as possible.
+Role-play,6,Hotel,I’d like to give you a situation and ask you to act it out. You are visiting a new city and need a hotel room for the night. Call a hotel and ask three or four questions to find out about its rooms and services.,"I’m sorry, but there is a problem which I need you to resolve. When you get to your hotel room, it is very small and not clean at all. Call the front desk and describe what you have found in detail. Then, make some suggestions as to how you can resolve the situation","Thats the end of the situation. Sometimes, surprising or unexpected things can happen when you stay at a hotel.
+Tell me about a memorable experience you had while staying at a hotel. Maybe there was a problem with your room. Maybe you met some other guests. Tell me the whole story of an interesting hotel visit."
+Role-play,6,Hotel,Tell me about the hotels in your country. What are those places like?,People often have memories of especially beautiful and interesting hotels. Tell me about a hotel that you remember for some reason. Where was it? What did it look like? Describe it for me in as much detail as possible.,"When was the last time you stayed in a hotel? Tell me the whole story of where you were, why you were there and what you did there. Take me through the whole hotel stay from start to finish."
+Role-play,5,Industry,"Tell me about one industry in your country that is well-known. You can talk about any industry such as the entertainment, technology, automotive industry or other industries. Pick one industry and tell me all about it.","Can you tell me about one promising or famous company in this particular industry? Tell me how the company started, and all the things that have happened that made it become so well- known.","When this company introduced its most important products, were they successful right away? Describe to me the challenges this company faced and how the company was able to succeed. Tell me in as much detail as you can."
+Role-play,5,Industry,What are some of the companies that young people want to work for these days? Why do young people want to work for these companies?,What do people usually do to prepare for their future careers? How do they learn about the different types of industries and how do they get ready to apply for those jobs?,Describe a company or industry in your country that is attractive to workers. When did this company or industry start? How has it become successful? What has made this company or industry so attractive to workers?
+Role-play,6,Industry,What are some of the companies that young people want to work for these days? Why do young people want to work for these companies?,Describe a company or industry in your country that is attractive to workers. When did this company or industry start? How has it become successful? What has made this company or industry so attractive to workers?,What kinds of efforts have you made for your career in the past? Tell me about some individual efforts that you have made for your career.
+Role-play,6,Internet,I’d like to give you a situation and ask you to act it out. Your friend has found a cool website. Call your friend and ask three or four questions about the website he[she] has found.,"I’m sorry, but there is a problem which I need you to resolve. You have tried to check out that website, but it is not available. Call your friend, explain the situation and make some suggestions to solve the problem.","That's the end of the situation. Have you ever had any trouble on the Internet? Perhaps, you had difficulty using a website or you lost Internet connection. What was the exact problem and how did you deal with the situation?"
+Role-play,6,Movie,I’d like to give you a situation and ask you to act it out. You want to take your friend to the movies. Call the theater and ask two to three questions to get tickets for you and your friend.,"I’m sorry, but there is a problem which I need you to resolve. When you and your friend arrive at the theater, you discover that theyve sold the wrong tickets to you. Explain the situation to the ticket seller at the booth. Offer two or three alternatives to solve the problem.","Thats the end of the situation. Have you ever bought concert tickets or made plans for a trip, or made plans for other things, but had to cancel at the last minute because of something that happened unexpectedly? Tell me everything about what had happened that prevented you from going."
+Role-play,6,MP3 Player,I’d like to give you a situation and ask you to act it out. You want to buy an MP3 player. You have a friend who knows a lot about MP3 players. Call your friend and ask three or four questions to get information about buying an MP3 player.,"I’m sorry, but there is a problem which I need you to resolve. You have borrowed your friend s MP3 player but broke it. Call your friend and explain how you broke it and what its current condition is like. And then, offer two or three alternatives to get your friend a working MP3 player as soon as possible.","That's the end of the situation. Tell me about a situation when some sort of equipment broke or did not work properly. Give me the background of the situation. And then, tell me what happened and how you resolved the problem."
+Role-play,6,Nutritionist,you read about a professional nutritionist that helps people improve their diet. Call the nutritionist's office and ask three or four questions to get more information.,"After purchasing a food item at the store, you have discovered that something is wrong with the item. Call the store and explain the problem in detail and propose a solution.",Describe a time when you made a significant change to your diet or exercise routine. What led this change to happen? How did it work out eventually? Describe what happened in detail from beginning to end.
+Role-play,6,Party,I’d like to give you a situation and ask you to act it out. You have been invited to a holiday party. Call your friend and ask when the party starts and what you should bring there. Ask two or three more questions about the party.,"I’m sorry, but there is a problem which I need you to resolve. You just had a car accident and you think you are going to be late for the holiday party. Call your friend, explain the situation, and give two or three alternatives regarding the situation.",Thats the end of the situation. Have you ever made plans for a trip or a party but had to cancel at the last minute because of something that happened unexpectedly? Tell me everything about what had happened that prevented you from going.
+Role-play,6,Performance,I’d like to give you a situation and ask you to act it out. You want to get two tickets to see a performance during your vacation. Call the box office and ask three or four questions to get tickets.,"I'm sorry, but there is a problem which I need you to resolve. On the day of the performance, you are very sick. Call your friend and explain the situation and offer two different options to resolve this situation.","Thats the end of the situation. Has this ever happened to you? Have you ever bought tickets or made reservations but something went wrong? Tell me about that experience. Begin by giving me some background information about when and where this happened and who you were with. And then, tell me all the details of the incident and what you did to resolve it."
+Role-play,5,Phone,"I’d like to give you a situation and ask you to act it out. You would like to buy a new mobile phone. Call a store and tell them what you need. And then, ask three or four questions to find out about the phones they offer.","I'm sorry, but there is a problem which I need you to resolve. When you get the new phone, you realized that it does not have all the features you need. You would like to return it to get a new phone. Call the store, explain the situation and make arrangements to get a phone that has the features you need.",That's the end of the situation. Have you ever bought a piece of technology which was not what you wanted or different from what you hade expected? Was the feature not what you wanted or did it just not work properly?
+Role-play,5,Phone,What do you like most about your phone? Do you like the camera? Do you like a certain application? Do you like a game that is on your phone? Tell me why you like that feature.,What do you and your friends do on your phones besides talking to each other over the phone? Do you make updates on your social media pages? Do you play games? Tell me what you typically do on your phone,Tell me about the first phone you used. How was it? How was it different from the phone you are using now?
+Role-play,5,Phone,Tell me about the kinds of things you and your friends talk about on the phone.,"I’d like to know about your routine of talking on the phone. Who do you talk with, when do you usually talk on the phone and how long do you talk for? Do you do other things at the same time when you are on the phone?","Can you tell me about a memorable phone conversation you had using your phone? Maybe your friend or your relative told you some exciting news. Maybe something funny happened while you were on the phone. 
+Tell me about that story from beginning to end with lots of details about why it was so memorable."
+Role-play,5,Phone,Tell me about the kinds of things you and your friends talk about on the phone.,"I’d like to know about your routine of talking on the phone. Who do you talk with, when do you usually talk on the phone and how long do you talk for? Do you do other things at the same time when you are on the phone?","How did you choose the phone that you currently use? How did you hear about it? Did you do research? 
+Tell me everything you can remember about your experience of choosing your phone from beginning to end."
+Role-play,6,Phone,What do you like most about your phone? Do you like the camera? Do you like a certain application? Do you like a game that is on your phone? Tell me why you like that feature.,Tell me about the first phone you used. How was it? How was it different from the phone you are using now?,"Some features and services on phones are easy to use. But you may have to get help from friends, family or the service providers for certain features, battery problems or other phone services. Tell me about a time when you had a problem using your phone. What was the problem and how did you deal with the situation?"
+Role-play,6,Real estate,"Thafs the end of the situation. Tell me about a time when you found something that was broken.
+Why did the thing break and how did you deal with the situation? Give me all the details about that incident.","I’m sorry, but there is a problem which I need you to resolve. When you get to your new home, you discover that a window is broken. Call the repair shop and Leave a message. Describe in detail the condition of the window.",Thats the end of the situation. Tell me about a time when you found something that was broken. Why did the thing break and how did you deal with the situation? Give me all the details that incident. 
+Role-play,6,Recycling,Suppose that you have moved into a new building. Call the manager of the building and ask three or four questions about recycling.,"a new resident from aborad has just rented an apartment in your building. Hoever, he is throwing away garbage in the recycling bin. Other residents are very upset about that. Go to the new resident and explain the situation and tell him about the recycling policy.",tell me what recycling was like when you were a child. Was there a particular place you took out the recyclables to? How was recycling back then different from what you are doing now?
+Role-play,6,relative's House,"I’d like to give you a situation and ask you to act it out. Someone in your family is going on a vacation, and you have agreed to take care of his or her responsibilities at home. Call you relative and ask three or four questions to get all the information you need.","I’m sorry, but there is a problem which I need you to resolve. When you arrive at your relative's house, the door is locked and the key is not where it is supposed to be. Call your relative's hotel and leave a message explaning the situation. Give two or three options to resolve the problem.","Thats the end of the situation.  Have you ever been in a situation where you agreed to do something for friends or family members and then couldn't do it? Give me all the detials about what you agreed to do, what happened, and how the situation was resolved."
+Role-play,6,Rental car,I’d like to give you a situation and ask you to act it out. You need to rent a car for about a week. Call the rental agency and ask three or four questions to get all the information you need..,"I'm sorry, but there is a problem which I need you to resolve. You have received the rental car, but there are many problems with it. Call the rental agency and explain the situation. Give two to three alternatives. ",That's the end of the situation. Have you ever rented a car? When and where was it? Why did you need to rent a car? Where did you go? Tell me everything about that experience.
+Role-play,6,Rental car,I’d like to give you a situation and ask you to act it out. You need to rent a car for about a week. Call the rental agency and ask three or four questions to get all the information you need. ,"I'm sorry, but there is a problem which I need you to resolve. You want to rent a specific kind of car, but you find out that NONE are available. Call the manager and describe the situation. Explain why you want that particular kind of car and offer several alternatives to solve the problem.",That's the end of the situation.  Have you ever rented a car? When and where was it? Why did you need to rent a car? Where did you go? Tell me everything about that experience
+Role-play,6,Restaurant,I'd like to give you a situation and ask you to act it out. Your friend has a family member who has just opened up a restaurant. Ask three or four questions to learn more about this new restaurant to decide whether you want to order food from it.,"I’m sorry, but there is a problem which I need you to resolve. You ordered food to be delivered to your workplace for a lunch meeting. When you opened the package, you realize that the delivery person has brought you someone else s order. Call the restaurant, talk to the manager and offer two or three solutions to the problem so that you can get the correct order as soon as possible.","That's the end of the situation. Tell me about a time when you went out for a special meal with your family, friends or co-workers. What was the occasion? Where did you go and what happened during the meal? Tell me what happened from beginning to end."
+Role-play,6,Store,I’d like to give you a situation and ask you to act it out.  You are at a clothing store and need to get some clothes. Ask two to three questions about the clothes you would like to buy. ,"I'm sorry,but there is a problem which I need you to resolve. The clothes you have ordered have arrived, but one of the shirts has a problem. Call the clothing store and explain the problem. Give two to three alternatives to solve the problem. ",that's the end of the situation. Have you ever been unhappy with something that you bought or some service you received? What was the problem? How did you deal with the situation? Tell me everything in detail.
+Role-play,5,Technology,"What kind of technology do people typically use in your country? Do people use computers, cell phones, or hand-held devices? What are some common forms of technology that people have?",Tell me about a piece of technology that you use every day. What kind of things do you use it for?,Technology has definitely changed over time. Tell me about an early memory that you have about a piece of technology. It could be a computer or a mobile phone from many years ago. Describe for me what this thing was like back then. How has that technology changed over time?
+Role-play,6,Technology,"What kind of technology do people typically use in your country? Do people use computers, cell phones, or hand-held devices? What are some common forms of technology that people have?",Technology has definitely changed over time. Tell me about an early memory that you have about a piece of technology. It could be a computer or a mobile phone from many years ago. Describe for me what this thing was like back then. How has that technology changed over time?,Problems often come up because of our dependence on technology. Think about a time when you experienced a problem because some piece of technology was not working properly. Maybe your computer crashed or maybe your cell phone had no service. Tell me about a time when you had some kind of problem getting your technology to work.
+Role-play,6,Technology Indurstry Report,I’d like to give you a situation and ask you to act it out. You are writing a report on the technology industry. Your friend knows a lot about this industry. Call him and ask three or four questions to learn more about this industry.,"I'm sorry, but there is a problem which I need you to resolve. Your friend offers to meet you so that you can learn more about the indusrtry which he works in. however, a few days before the meeting. A member of your family has an emergency. Call your friend, explain the situation, and offer two or three alternatives to get the information later on.","That's the end of the situation. Tell me about a time you learned about an exciting new product. It might have been the first time you learned about smartphones, video games, cars or other products. Tell me about the product and how you learned about it. Tell me everything you did from beginning to end in as much detail as possible."
+Role-play,6,Traveling,I’d like to give you a situation and ask you to act it out. You want to take a trip within your own country. Call the travel agent and ask three or four questions to find out what you need. ,"I'm sorry,but there is a problem which I need you to resolve.  You have booked a non-refundable plane ticket. However, something has happened that prevents you from going next week. Call the travel agent, explain what has happened. And offer some alternatives to resolve the problem. ","that's the end of the situation.  There are times when something out of the ordinary happens while traveling. I wonder if you have ever experienced anything surprising,unexpected or unusual during a trip. Tell me the story of that experience, expecially about what made it so unforgettable."
+Role-play,6,TV,I’d like to give you a situation and ask you to act it out. You are having group of friends over to watch a movie. Ask your friends four to five questions about about the kind of movie you should watch together.     ,"I’m sorry, but there is a problem which I need you to resolve. When you try to play the movie on the screen, something is wrong and it does not play. Explain the problems to your guests and offer two or three solutions or alternatives to the problem. ","Thats the end of the situation. Have you ever gone to a movie or wanted to watch a special TV event,and then something happened that prevented you from watching it? Tell me about that experience, when it happened, where you were, and who you were with. Give me all the details, especially about what happened that prevented you from watching the movie or the TV event. How did you deal with the situations?    "
+Role-play,5,weather,Tell me about the weather in your country. Are there different seasons? What is the weather typically like?,How has the weather in your country changed over time? What was the weather typically like when you were a child? How was the weather different from the weather today?,"Severe weather can often cause serious problems. Tell me about an experience you had when the weather created some kind of problems. Maybe roads were flooded, maybe schools and businesses were closed due to snow or cold weather conditions. Tell me about an experience you had when severe weather created some kind of problem. Give me lots of details."
+Role-play,6,weather,Tell me about the weather in your country. Are there different seasons? What is the weather typically like?,How has the weather in your country changed over time? What was the weather typically like when you were a child? How was the weather different from the weather today?,How has the weather in your country changed over time? What was the weather typically like when you were a child? How was the weather different from the weather today?
+Role-play,6,weather,Tell me about the weather in your country. Are there different seasons? What is the weather typically like?,How has the weather in your country changed over time? What was the weather typically like when you were a child? How was the weather different from the weather today?,"Severe weather can often cause serious problems. Tell me about an experience you had when the weather created some kind of problems. Maybe roads were flooded, maybe schools and businesses were closed due to snow or cold weather conditions. Tell me about an experience you had when severe weather created some kind of problem. Give me lots of details."
+Avanced,6,Housing ,I would like to now talk about where you live. Compare how you solve problems in your home to how your parents or friends solve problems that occur in their homes. How is it similar? How is it different?,What are some major problems people have when they rent a home or an apartment? How do people deal with these issues? How do these things affect how or where people live?,
+Avanced,6,Housing ,I would like to now talk about where you live. Many homes today are equipped with new appliances or electronic devices that make everyday life more convenient. What are some of these new home appliances or electronic devices? How have they changed household responsibilities?,Think about a specific modern appliance or device that people consider as useful or convenient at home. What do people say about this home appliance or device?,
+Avanced,6,Housing ,I would like to now talk about where you live. How has the style of homes changed over the past 5 or 10 years at where you live? Are the homes being built today different from the homes built 10 years ago? What developments or changes have you noticed?,Sometimes the issues of too many new homes or not enough new homes can create a controversy in a community. Think of a time when the issue regarding housing was in the news in your area. What was the issue and why were people talking about it? ,
+Avanced,6,Industry,"Can you tell me about an industry that you follow? Maybe you are interested in the food industry,energy,mobile computing or another industry. What was this industry like three years ago? How has it changed since then?",Tell me about a time that a product did NOT meet the expectations of the public. Maybe the gaming industry produced a new video game platform that did not perform well or a new smartphone or a software program had problems when it was first released. Tell me all about what happened in detail and describe the reactions of the public and the industry to that issue. ,
+Avanced,6,Industry,What do people usually do to prepare for their future careers? How do they learn about the different types of industries and how do they get ready to apply for those jobs?,what is in industry or a company that people in your company are talking about nowadays? Tell me why people are interested in this industry and what they are saying about it. Give me lots of details.,
+Avanced,6,movie,You indicated in the survey that you like to go to movies with adults. Could you compare the movies made today to movies you saw while growing up? How have movies changed over the years? What are the differences and similarities?,"When you talk to your friends or family about movies, What topics or issues regarding movies do you discuss? Why are these issues or interest or concern to you and your friends? What makes them so important? ",
+Avanced,6,Music,"You indicated in the survey that you listen to music. Pick two different kinds of music or composers. Describe each in as much detail as possible, and then compare the similarities and differences between them. ",What new electronic gadgets or equipment are people who like music interested in these days? What are they talking about? What new products excite them and why? ,
+Avanced,6,Overseas Trips,You indicated in the survey that you take vacations internationally. How has traveling to other countries changed over the years? Is it easier or more difficult? Describe what traveling was like in the past and what changes you have seen over the years.,when people discuss traveling to other countries. What are the things that they are most interested in doing or seeing? Why are these things of such interest or importance to travelers? ,
+Avanced,6,Phone,"Describe how people used cell phones five years ago.
+What could they do with their phone functions and application? What are some of the biggest changes as to how people use their phones? Describe the phone you used to use in the past in detail","In some socities, there is a concern that young people are now developing face-to-face communication skills because they spend too much time on their phones. What do people in your country think about the way in which young people use their phones?",
+Avanced,6,Shopping,You indicated in the survey that you go shopping. Going shopping has changed. Going shopping has changed a great deal over the years. Talk about the most significant changes in shopping over the years.,what kinds of products and services do you hear shoppers talk about the most these days? Why do you think they are generating so much  interest? Tell me in detail about those products. What are people saying about them and why? ,
+Avanced,6,TV,"Audio or visual technology has changed over time. Now, people use big screens and tablets at home to enjoy visual content. Can you tell me about some different ways people watch TV programs? How has it changed over the last 10 years? ",New technology is being applied to visual content these days. How is new technology being applied? What are some trends these days related to this technology? And what do people think about it? ,
+Avanced,6,Vacation at Home,You indicated in the survey that you stay at home for vacations. How do most people spend their vacation in your country? How do most people spend their vacation in your country? How does that compare to the way people spent their vacation when you were growing up? are they doing things differently? how have things changed and why have things changed? please take a minute to discuss this topic.,"experts state that vacations are important for every individual. Take a minute and report for me the important benefits of vacation time to a person's health, relationships and personal growth.",
+Advacned,5,Domestic Trips,You indicated in the survey that you take vacations domestically. Most people say that traveling has become more difficult in the past five years. Tell me what types of changes you have observed when traveling and how these changes affected the traveler or travel experience.,"When people talk about traveling, what are the main issues or concerns they typically raise or discuss? What has caused these concerns? What is being done to address these concerns for the future?",None
+Advacned,6,Domestic Trips,You indicated in the survey that you take vacations domestically. Most people say that traveling has become more difficult in the past five years. Tell me what types of changes you have observed when traveling and how these changes affected the traveler or travel experience.,"When people talk about traveling, what are the main issues or concerns they typically raise or discuss? What has caused these concerns? What is being done to address these concerns for the future?",None
+Advacned,5,Family / Frlend,"Describe two different friends or family members. Describe each of them in as much detail as you can. And then, tell me about the similarities they have in common and the differences between them.","When you get together with friends or family, what are some of the topics or interests you discuss? Why are these things of interest or concern? How do these things affect your life? Please explain in as much detail as you can.",None
+Advacned,6,Family / Frlend,"Describe two different friends or family members. Describe each of them in as much detail as you can. And then, tell me about the similarities they have in common and the differences between them.","When you get together with friends or family, what are some of the topics or interests you discuss? Why are these things of interest or concern? How do these things affect your life? Please explain in as much detail as you can.",None
+Advacned,5,Food,How has food shopping changed over the last 20 years? What are some of the trends or changes you have noticed when comparing shopping today with that of the past?,There have been many stories in the news of foods that have been contaminated or that contained dangerous bacteria. Tell me about the food scare stories you heard about or read about.,None
+Advacned,6,Food,How has food shopping changed over the last 20 years? What are some of the trends or changes you have noticed when comparing shopping today with that of the past?,There have been many stories in the news of foods that have been contaminated or that contained dangerous bacteria. Tell me about the food scare stories you heard about or read about.,None
+Advacned,5,Gathering,"Celebrations and gatherings are important to people living in a city or town. However, a lot of work, organization and money go into putting one of these events together. Was there a discussion among people related to organizing an event recently? What was the issue or difficulty people were discussing?",Gatherings and celebrations in small towns are often different from those in big cities. Tell me about some of the similarities and differences between the celebrations people have in small towns and in big cities in your country.,None
+Advacned,5,Gathering,How have celebrations and gatherings in your country changed since you were a child? Are there more of these events now than before? What sorts of events are more popular today than in the past?,"What kinds of concerns do you hear people express when they have gatherings and celebrations in your area?
+Do people complain about traffic, parking, noise, garbage or other problems? What do people in your area say about such celebrations?",None
+Advacned,6,Gathering,"Celebrations and gatherings are important to people living in a city or town. However, a lot of work, organization and money go into putting one of these events together. Was there a discussion among people related to organizing an event recently? What was the issue or difficulty people were discussing?",Gatherings and celebrations in small towns are often different from those in big cities. Tell me about some of the similarities and differences between the celebrations people have in small towns and in big cities in your country.,None
+Advacned,6,Gathering,How have celebrations and gatherings in your country changed since you were a child? Are there more of these events now than before? What sorts of events are more popular today than in the past?,"What kinds of concerns do you hear people express when they have gatherings and celebrations in your area?
+Do people complain about traffic, parking, noise, garbage or other problems? What do people in your area say about such celebrations?",None
+Advacned,5,Geography,"I’d like you to think about a specific historic event that has affected the relationship between your country and one of its neighboring nations. It could be a treaty signed between two countries, a cultural event or the visit of another country s minister or president. Tell me in detail about everything that happened.","Tell me in detail about changes you have observed concerning the relationship between your country and other countries. The change might be related to the economy, sports, arts, culture or politics. Describe the changes in detail.",None
+Advacned,6,Geography,"I’d like you to think about a specific historic event that has affected the relationship between your country and one of its neighboring nations. It could be a treaty signed between two countries, a cultural event or the visit of another country s minister or president. Tell me in detail about everything that happened.","Tell me in detail about changes you have observed concerning the relationship between your country and other countries. The change might be related to the economy, sports, arts, culture or politics. Describe the changes in detail.",None
+Advacned,5,Health,"Describe how people usually stayed in good shape when you were a child. What kinds of sports did they play?
+Were gyms popular then? Describe what fitness was like then, and how it has changed over the years.",Tell me about a recent news story related to health issues. Describe what happened in detail. What was the reaction of your community?,None
+Advacned,5,Health,"Different generations have different views on what is healthy. Some generations think people have to be skinny in order to be healthy, while others believe people must be muscular. What did your parents' generation think people have to be like in order to be healthy? How does that compare to what your generation believes?","Describe a recent event in your area that involved health issues. Perhaps, something happened in the food or medical industries. Perhaps, something related to sports happened or something like smoking was banned.
+Describe what happened in detail including the reaction of your community.",None
+Advacned,6,Health,"Describe how people usually stayed in good shape when you were a child. What kinds of sports did they play?
+Were gyms popular then? Describe what fitness was like then, and how it has changed over the years.",Tell me about a recent news story related to health issues. Describe what happened in detail. What was the reaction of your community?,None
+Advacned,6,Health,"Different generations have different views on what is healthy. Some generations think people have to be skinny in order to be healthy, while others believe people must be muscular. What did your parents' generation think people have to be like in order to be healthy? How does that compare to what your generation believes?","Describe a recent event in your area that involved health issues. Perhaps, something happened in the food or medical industries. Perhaps, something related to sports happened or something like smoking was banned.
+Describe what happened in detail including the reaction of your community.",None
+Advacned,5,Holiday,What are some holidays in your country? What do people do during these holidays? What is special about them?,What are some issues or concerns people have regarding holidays? What do people do to address those issues or concerns?,None
+Advacned,6,Holiday,What are some holidays in your country? What do people do during these holidays? What is special about them?,What are some issues or concerns people have regarding holidays? What do people do to address those issues or concerns?,None
+Advacned,5,Housing,Talk about general housing changes compared to the past. What do you think is the most evident? Give me all the details.,What are some current social issues related to housing in your country? Why do these problems occur and how do people deal with the situation?,None
+Advacned,6,Housing,Talk about general housing changes compared to the past. What do you think is the most evident? Give me all the details.,What are some current social issues related to housing in your country? Why do these problems occur and how do people deal with the situation?,None
+Advacned,5,Housing ,I would like to now talk about where you live. How has the style of homes changed over the past 5 or 10 years at where you live? Are the homes being built today different from the homes built 10 years ago? What developments or changes have you noticed?,What are some major problems people have when they rent a home or an apartment? How do people deal with these issues? How do these things affect how or where people live?,None
+Advacned,5,Housing ,I would like to now talk about where you live. Many homes today are equipped with new appliances or electronic devices that make everyday life more convenient. What are some of these new home appliances or electronic devi ces? How have they changed household responsibilities?,Think about a specific modern appliance or device that people consider as useful or convenient at home. What do people say about this home appliance or device?,None
+Advacned,5,Housing ,I would now like to talk about where you live. Compare how you solve problems in your home to how your parents or friends solve problems that occur in their homes. How is it similar? How is it different?,"Sometimes the issues of too many new homes or not enough new homes can create a controversy in a 
+community. Think of a time when the issue regarding housing was in the news in your area.  What was the issue and why were people talking about it?",None
+Advacned,6,Housing ,I would like to now talk about where you live. How has the style of homes changed over the past 5 or 10 years at where you live? Are the homes being built today different from the homes built 10 years ago? What developments or changes have you noticed?,What are some major problems people have when they rent a home or an apartment? How do people deal with these issues? How do these things affect how or where people live?,None
+Advacned,6,Housing ,I would like to now talk about where you live. Many homes today are equipped with new appliances or electronic devices that make everyday life more convenient. What are some of these new home appliances or electronic devi ces? How have they changed household responsibilities?,Think about a specific modern appliance or device that people consider as useful or convenient at home. What do people say about this home appliance or device?,None
+Advacned,6,Housing ,I would now like to talk about where you live. Compare how you solve problems in your home to how your parents or friends solve problems that occur in their homes. How is it similar? How is it different?,"Sometimes the issues of too many new homes or not enough new homes can create a controversy in a 
+community. Think of a time when the issue regarding housing was in the news in your area.  What was the issue and why were people talking about it?",None
+Advacned,5,Industry,"Can you tell me about an industry that you follow? Maybe you are interested in the food industry, energy, mobile computing or another industry. What was this industry like three years ago? How has it changed since then?",Tell me about a time that a product did not meet the expectations of the public. Maybe the gaming industry produced a new video game platform that did not perform well or a new smartphone or a software program had problems when it was first released. Tell me all about what happened in detail and describe the reactions of the public and the industry to that issue.,None
+Advacned,5,Industry,"How do people prepare for future work in your country’s industries? Do they get general education first or receive specific training once they join the company? Do they receive specific job training from a young age?
+How has the process changed over the past five years? Give me all the details.",What is an industry or a company that people in your country are talking about nowadays? Tell me why people are interested in this industry and what they are saying about it. Give me lots of details.,None
+Advacned,6,Industry,"Can you tell me about an industry that you follow? Maybe you are interested in the food industry, energy, mobile computing or another industry. What was this industry like three years ago? How has it changed since then?",Tell me about a time that a product did not meet the expectations of the public. Maybe the gaming industry produced a new video game platform that did not perform well or a new smartphone or a software program had problems when it was first released. Tell me all about what happened in detail and describe the reactions of the public and the industry to that issue.,None
+Advacned,6,Industry,"How do people prepare for future work in your country’s industries? Do they get general education first or receive specific training once they join the company? Do they receive specific job training from a young age?
+How has the process changed over the past five years? Give me all the details.",What is an industry or a company that people in your country are talking about nowadays? Tell me why people are interested in this industry and what they are saying about it. Give me lots of details.,None
+Advacned,5,Internet,How does Internet usage vary among people of different age groups from old to young? Why do they use the Internet? What do they do online? Please discuss this in more detail.,"What kinds of concerns do people have about Internet use regarding security, privacy or safety? How have these concerns changed over time? Please discuss this in more detail.",None
+Advacned,6,Internet,How does Internet usage vary among people of different age groups from old to young? Why do they use the Internet? What do they do online? Please discuss this in more detail.,"What kinds of concerns do people have about Internet use regarding security, privacy or safety? How have these concerns changed over time? Please discuss this in more detail.",None
+Advacned,5,movie,"When you talk to your friends or family about movies, what topics or issues regarding movies do you discuss?
+Why are these issues of interest or concern to you and your friends? What makes them so important?",You indicated in the survey that you like to go to movies with adults. Could you compare the movies made today to movies you saw while growing up? How have movies changed over the years? What are the differences and similarities?,None
+Advacned,6,movie,"When you talk to your friends or family about movies, what topics or issues regarding movies do you discuss?
+Why are these issues of interest or concern to you and your friends? What makes them so important?",You indicated in the survey that you like to go to movies with adults. Could you compare the movies made today to movies you saw while growing up? How have movies changed over the years? What are the differences and similarities?,None
+Advacned,5,Music,What new electronic gadgets or equipment are people who like music interested in these days? What are they talking about? What new products excite them and why?,"You indicated in the survey that you listen to music. Pick two different kinds of music or composers. Describe each in as much detail as possible, and then compare the similarities and differences between them.",None
+Advacned,6,Music,What new electronic gadgets or equipment are people who like music interested in these days? What are they talking about? What new products excite them and why?,"You indicated in the survey that you listen to music. Pick two different kinds of music or composers. Describe each in as much detail as possible, and then compare the similarities and differences between them.",None
+Advacned,5,Overseas Trips,"When people discuss traveling to other countries, what are the things that they are most interested in doing or seeing? Why are these things of such interest or importance to travelers?",You indicated in the survey that you take vacations internationally. How has traveling to other countries changed over the years? Is it easier or more difficult? Describe what traveling was like in the past and what changes you have seen over the years.,None
+Advacned,6,Overseas Trips,"When people discuss traveling to other countries, what are the things that they are most interested in doing or seeing? Why are these things of such interest or importance to travelers?",You indicated in the survey that you take vacations internationally. How has traveling to other countries changed over the years? Is it easier or more difficult? Describe what traveling was like in the past and what changes you have seen over the years.,None
+Advacned,5,Phone ,Describe how people used cell phones five years ago. What could they do with their phone functions and applications? What are some of the biggest changes as to how people use their phones? Describe the phone you used to use in the past in detail.,"In some societies, there is a concern that young people are not developing face-to-face communication skills because they spend too much time on their phones. What do people in your country think about the way in which young people use their phones?",None
+Advacned,6,Phone ,Describe how people used cell phones five years ago. What could they do with their phone functions and applications? What are some of the biggest changes as to how people use their phones? Describe the phone you used to use in the past in detail.,"In some societies, there is a concern that young people are not developing face-to-face communication skills because they spend too much time on their phones. What do people in your country think about the way in which young people use their phones?",None
+Advacned,5,Recycling,Describe what the attitude was toward recycling when you were a child. Did people recycle then? Did they throw everything out in the garbage? What were people s views on recycling at that time and how have they changed over the years?,Stories about recycling are often in the media. Tell me about one news story that you heard related to recycling or perhaps the environment. Describe what the story was about and what the reaction to the story was.,None
+Advacned,5,Recycling,The handling of recycling materials has changed over the years. Tell me how the collection of recycling materials used to be in the past. And how has it evolved to the present?,What are some of the stories in the news with respect to recycling or the environment today? Describe what the current news reports are saying about recycling or the environment.,None
+Advacned,6,Recycling,Describe what the attitude was toward recycling when you were a child. Did people recycle then? Did they throw everything out in the garbage? What were people s views on recycling at that time and how have they changed over the years?,Stories about recycling are often in the media. Tell me about one news story that you heard related to recycling or perhaps the environment. Describe what the story was about and what the reaction to the story was.,None
+Advacned,6,Recycling,The handling of recycling materials has changed over the years. Tell me how the collection of recycling materials used to be in the past. And how has it evolved to the present?,What are some of the stories in the news with respect to recycling or the environment today? Describe what the current news reports are saying about recycling or the environment.,None
+Advacned,5,Restaurant,"Many fast-food, take-out or delivery restaurants are now offering healthy choices. Why do you think this change has come about in recent years? Was it a result of consumer pressure, market forces or something else?","Chain restaurants such as McDonalds have a set menu you can expect. On the other hand, small local restaurants have their own menus, and you may not be able to know what to expect. Talk about your experience of going to a chain restaurant and a local restaurant. What was the biggest difference?",None
+Advacned,5,Restaurant,Many restaurants are changing their menus to suit customers who are more health-conscious. Talk about the changes you notice about restaurants in your country related to this trend.,"What are the latest trends people are talking about related to take-out or delivery food options? Perhaps, it has to do with ordering online or an app. Or it has to do with some kinds of new offerings. Discuss the changes that you have observed recently regarding take-out or delivery food options.",None
+Advacned,5,Restaurant,"What are the latest trends people are talking about related to take-out or delivery food options? Perhaps, it has to do with ordering online or an app. Or it has to do with some kinds of new offerings. Discuss the changes that you have observed recently regarding take-out or delivery food options.",What kinds of changes in restaurants or eating out have you noticed over the last few years? How was eating out different? What has brought about some of these changes?,None
+Advacned,5,Restaurant,What kinds of changes in restaurants or eating out have you noticed over the last few years? How was eating out different? What has brought about some of these changes?,"When your friends or family discuss restaurants they like or dislike, what are some of the characteristics they discuss the most? How do these characteristics affect their dining experiences?",None
+Advacned,6,Restaurant,"Many fast-food, take-out or delivery restaurants are now offering healthy choices. Why do you think this change has come about in recent years? Was it a result of consumer pressure, market forces or something else?","Chain restaurants such as McDonalds have a set menu you can expect. On the other hand, small local restaurants have their own menus, and you may not be able to know what to expect. Talk about your experience of going to a chain restaurant and a local restaurant. What was the biggest difference?",None
+Advacned,6,Restaurant,Many restaurants are changing their menus to suit customers who are more health-conscious. Talk about the changes you notice about restaurants in your country related to this trend.,"What are the latest trends people are talking about related to take-out or delivery food options? Perhaps, it has to do with ordering online or an app. Or it has to do with some kinds of new offerings. Discuss the changes that you have observed recently regarding take-out or delivery food options.",None
+Advacned,6,Restaurant,"What are the latest trends people are talking about related to take-out or delivery food options? Perhaps, it has to do with ordering online or an app. Or it has to do with some kinds of new offerings. Discuss the changes that you have observed recently regarding take-out or delivery food options.",What kinds of changes in restaurants or eating out have you noticed over the last few years? How was eating out different? What has brought about some of these changes?,None
+Advacned,6,Restaurant,What kinds of changes in restaurants or eating out have you noticed over the last few years? How was eating out different? What has brought about some of these changes?,"When your friends or family discuss restaurants they like or dislike, what are some of the characteristics they discuss the most? How do these characteristics affect their dining experiences?",None
+Advacned,5,Shopping,What kinds of products and services do you hear shoppers talk about the most these days? Why do you think they are generating so much interest? IeU me in detail about those products. What are people saying about them and why?,"You indicated in the survey that you go shopping. Going shopping has changed a great deal over the years.
+Talk about the most significant changes in shopping over the years.",None
+Advacned,6,Shopping,What kinds of products and services do you hear shoppers talk about the most these days? Why do you think they are generating so much interest? IeU me in detail about those products. What are people saying about them and why?,"You indicated in the survey that you go shopping. Going shopping has changed a great deal over the years.
+Talk about the most significant changes in shopping over the years.",None
+Advacned,5,TV,"Audio or visual technology has changed over time. Now, people use big screens and tablets at home to enjoy visual content. Can you tell me about some different ways people watch TV programs? How has it changed over the last 10 years?","New technology is being applied to visual content these days. How is new technology being applied?
+What are some trends these days related to this technology? And what do people think about it?",None
+Advacned,6,TV,"Audio or visual technology has changed over time. Now, people use big screens and tablets at home to enjoy visual content. Can you tell me about some different ways people watch TV programs? How has it changed over the last 10 years?","New technology is being applied to visual content these days. How is new technology being applied?
+What are some trends these days related to this technology? And what do people think about it?",None
+Advacned,5,Vacation at Home,"Experts state that vacations are important for every individual. Take a minute and report for me the important benefits of vacation time to a persons health,relationships and personal growth.","You indicated in the survey that you stay at home for vacations. How do most people spend their vacation in your country? How does that compare to the way people spent their vacation when you were growing up?
+Are they doing things differently? How have things changed and why have things changed? Please take a minute to discuss this topic.",None
+Advacned,6,Vacation at Home,"Experts state that vacations are important for every individual. Take a minute and report for me the important benefits of vacation time to a persons health,relationships and personal growth.","You indicated in the survey that you stay at home for vacations. How do most people spend their vacation in your country? How does that compare to the way people spent their vacation when you were growing up?
+Are they doing things differently? How have things changed and why have things changed? Please take a minute to discuss this topic.",None
+Advacned,5,Workplace,There have been a lot of changes in workplace. What are the noticeable changes you’ve observed?,What kinds of professions have changed a lot? There might be new professions and new policies related to these jobs. Please describe in detail.,None
+Advacned,6,Workplace,There have been a lot of changes in workplace. What are the noticeable changes you’ve observed?,What kinds of professions have changed a lot? There might be new professions and new policies related to these jobs. Please describe in detail.,None
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
