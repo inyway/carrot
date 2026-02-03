@@ -233,6 +233,16 @@ async function generateExcelReports(
     }
   }
 
+  // 기존 데이터 행 초기화 (shared formula 충돌 방지)
+  const lastRowNum = ws.rowCount;
+  for (let rowNum = firstDataRow; rowNum <= lastRowNum; rowNum++) {
+    const row = ws.getRow(rowNum);
+    row.eachCell((cell) => {
+      cell.value = null;
+    });
+    row.commit();
+  }
+
   // 모든 데이터행을 하나의 워크시트에 순차 삽입
   for (let rowIdx = 0; rowIdx < dataRows.length; rowIdx++) {
     const rowData = dataRows[rowIdx];
