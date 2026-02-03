@@ -18,8 +18,13 @@ export function detectMultiRowHeaders(
   // primaryHeaderRowNum 행의 최대 컬럼 수 파악
   const primaryRow = worksheet.getRow(primaryHeaderRowNum);
   let maxCol = 0;
-  primaryRow.eachCell({ includeEmpty: true }, (_cell, colNumber) => {
+  const primaryValues = new Map<number, string>();
+  primaryRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
     if (colNumber > maxCol) maxCol = colNumber;
+    const text = cellValueToString(cell.value).trim();
+    if (text.length > 0) {
+      primaryValues.set(colNumber, text);
+    }
   });
 
   // 다음 행들을 순차 스캔하여 서브헤더 여부 판단
@@ -29,34 +34,41 @@ export function detectMultiRowHeaders(
 
     const row = worksheet.getRow(rowNum);
     let nonEmptyCount = 0;
-    let hasNumeric = false;
     let hasFormula = false;
     let shortTextCount = 0;
     let dateCount = 0;
+    let numericCount = 0;
+    let matchesPrimaryCount = 0;
 
-    row.eachCell({ includeEmpty: false }, (cell) => {
+    row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
       const value = cell.value;
       if (value === null || value === undefined) return;
 
       nonEmptyCount++;
+
+      // 프라이머리 헤더와 동일한 값인지 체크 (수직 병합 감지)
+      const text = cellValueToString(value).trim();
+      const primaryText = primaryValues.get(colNumber);
+      if (primaryText && text === primaryText) {
+        matchesPrimaryCount++;
+      }
 
       if (value instanceof Date) {
         dateCount++;
         return;
       }
       if (typeof value === 'number') {
-        hasNumeric = true;
+        numericCount++;
         return;
       }
       if (typeof value === 'object' && value !== null && 'result' in value) {
         hasFormula = true;
         const result = (value as { result: unknown }).result;
-        if (typeof result === 'number') hasNumeric = true;
+        if (typeof result === 'number') numericCount++;
         return;
       }
 
       // 텍스트 셀 - 짧은 텍스트인지 확인
-      const text = cellValueToString(value).trim();
       if (text.length > 0 && text.length <= 15) {
         shortTextCount++;
       }
@@ -65,8 +77,15 @@ export function detectMultiRowHeaders(
     // 빈 행 → 스캔 중단
     if (nonEmptyCount === 0) break;
 
-    // 숫자, 수식이 있으면 → 데이터행 (스캔 중단)
-    if (hasNumeric || hasFormula) break;
+    // 수직 병합 패턴: 많은 셀이 프라이머리 헤더와 동일 → 서브헤더
+    // (병합된 셀은 마스터 셀의 값을 반복하므로 동일 값이 나옴)
+    if (matchesPrimaryCount >= 3) {
+      headerRowNums.push(rowNum);
+      continue;
+    }
+
+    // 수식이 포함된 행 → 데이터행 (스캔 중단)
+    if (hasFormula) break;
 
     // 짧은 텍스트 + 날짜만 있으면 → 서브헤더 (날짜를 레이블로 취급)
     if (shortTextCount + dateCount === nonEmptyCount) {
