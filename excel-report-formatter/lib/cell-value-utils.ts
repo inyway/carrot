@@ -124,6 +124,47 @@ export function detectMultiRowHeaders(
 }
 
 /**
+ * 데이터 행이 반복 헤더나 메타데이터 행인지 판별합니다.
+ * - 반복 헤더: 3개 이상의 컬럼 값이 해당 컬럼 헤더명과 정확히 일치
+ * - 메타데이터: 대부분의 셀이 동일한 긴 텍스트 (병합된 메타 행)
+ */
+export function isRepeatedHeaderOrMetadata(
+  rowData: Record<string, unknown>,
+  columns: string[]
+): boolean {
+  const values = columns.map(col => String(rowData[col] ?? '').trim());
+  const nonEmptyValues = values.filter(v => v.length > 0);
+
+  if (nonEmptyValues.length === 0) return false;
+
+  // 반복 헤더 감지: 컬럼 값이 헤더명과 일치하는 개수
+  let headerMatchCount = 0;
+  for (const col of columns) {
+    const val = String(rowData[col] ?? '').trim();
+    // 복합 컬럼명의 첫 파트와 비교 (예: "4월_1회차_14 (Mo)" → "4월")
+    const firstPart = col.split('_')[0];
+    if (val === col || val === firstPart) {
+      headerMatchCount++;
+    }
+  }
+  if (headerMatchCount >= 3) return true;
+
+  // 메타데이터 감지: 동일 텍스트(>5자)가 과반수의 셀에 반복 (병합된 메타 행)
+  // 짧은 값("Y","N","BZ" 등)은 출결 데이터일 수 있으므로 제외
+  const valueCounts = new Map<string, number>();
+  for (const v of nonEmptyValues) {
+    if (v.length > 5) {
+      valueCounts.set(v, (valueCounts.get(v) || 0) + 1);
+    }
+  }
+  for (const count of Array.from(valueCounts.values())) {
+    if (count >= Math.max(3, nonEmptyValues.length * 0.5)) return true;
+  }
+
+  return false;
+}
+
+/**
  * ExcelJS 셀 값에서 실제 값을 안전하게 추출합니다.
  * formula, richText, hyperlink, error 등 다양한 셀 타입을 처리합니다.
  */

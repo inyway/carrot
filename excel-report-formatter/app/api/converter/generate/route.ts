@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
-import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders } from '@/lib/cell-value-utils';
+import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata } from '@/lib/cell-value-utils';
 
 export const runtime = 'nodejs';
 
@@ -98,7 +98,7 @@ async function extractExcelData(
       }
     }
 
-    if (hasData) {
+    if (hasData && !isRepeatedHeaderOrMetadata(rowData, columns)) {
       data.push(rowData);
     }
   });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
-import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders } from '@/lib/cell-value-utils';
+import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata } from '@/lib/cell-value-utils';
 
 const API_BASE_URL = process.env.NESTJS_API_URL || 'http://localhost:4000/api';
 
@@ -97,7 +97,7 @@ async function extractExcelData(
       }
     }
 
-    if (hasData) {
+    if (hasData && !isRepeatedHeaderOrMetadata(rowData, columns)) {
       data.push(rowData);
     }
   });

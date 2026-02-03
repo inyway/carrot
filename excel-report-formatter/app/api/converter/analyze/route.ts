@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
-import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders } from '@/lib/cell-value-utils';
+import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata } from '@/lib/cell-value-utils';
 
 export const runtime = 'nodejs';
 
@@ -101,7 +101,6 @@ async function analyzeExcel(
   worksheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
     if (rowNum < dataStartRow) return;
 
-    rowCount++;
     if (preview.length < 100) {
       const rowData: Record<string, unknown> = {};
       let hasData = false;
@@ -116,8 +115,20 @@ async function analyzeExcel(
         }
       }
 
-      if (hasData) {
+      if (hasData && !isRepeatedHeaderOrMetadata(rowData, columns)) {
+        rowCount++;
         preview.push(rowData);
+      }
+    } else {
+      // 미리보기 범위 밖이라도 행 수는 계속 카운트
+      const rowData: Record<string, unknown> = {};
+      let hasData = false;
+      for (const { colIndex, name } of columnIndexToName) {
+        const extracted = safeExtractCellValue(row.getCell(colIndex).value);
+        if (extracted !== null) { hasData = true; rowData[name] = extracted; }
+      }
+      if (hasData && !isRepeatedHeaderOrMetadata(rowData, columns)) {
+        rowCount++;
       }
     }
   });
