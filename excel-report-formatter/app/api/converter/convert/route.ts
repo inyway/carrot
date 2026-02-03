@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
+import { cellValueToString, safeExtractCellValue } from '@/lib/cell-value-utils';
 
 const API_BASE_URL = process.env.NESTJS_API_URL || 'http://localhost:4000/api';
 
@@ -21,22 +22,7 @@ async function findSmartHeaderRow(
     let hasSectionMarkers = 0;
 
     row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      const value = cell.value;
-      let text = '';
-
-      if (value !== null && value !== undefined) {
-        if (typeof value === 'object' && value !== null && 'richText' in (value as object)) {
-          const richTextVal = value as { richText: Array<{ text: string }> };
-          text = (richTextVal.richText || []).map((t) => t.text).join('');
-        } else if (typeof value === 'object' && value !== null && 'result' in (value as object)) {
-          const resultVal = value as { result: unknown };
-          text = String(resultVal.result);
-        } else {
-          text = String(value);
-        }
-      }
-
-      const trimmed = text.trim();
+      const trimmed = cellValueToString(cell.value).trim();
       values[colNumber - 1] = trimmed;
 
       if (trimmed.length > 0) {
@@ -92,22 +78,7 @@ async function extractExcelData(
   const columnIndexToName: Array<{ colIndex: number; name: string }> = [];
 
   headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const value = cell.value;
-    let text = '';
-
-    if (value !== null && value !== undefined) {
-      if (typeof value === 'object' && value !== null && 'richText' in (value as object)) {
-        const richTextVal = value as { richText: Array<{ text: string }> };
-        text = (richTextVal.richText || []).map((t) => t.text).join('');
-      } else if (typeof value === 'object' && value !== null && 'result' in (value as object)) {
-        const resultVal = value as { result: unknown };
-        text = String(resultVal.result);
-      } else {
-        text = String(value);
-      }
-    }
-
-    const trimmed = text.trim();
+    const trimmed = cellValueToString(cell.value).trim();
     if (trimmed.length > 0 && trimmed !== 'undefined') {
       columnIndexToName.push({ colIndex: colNumber, name: trimmed });
     }
@@ -124,21 +95,11 @@ async function extractExcelData(
 
     for (const { colIndex, name } of columnIndexToName) {
       const cell = row.getCell(colIndex);
-      const value = cell.value;
+      const extracted = safeExtractCellValue(cell.value);
 
-      if (value !== null && value !== undefined) {
+      if (extracted !== null) {
         hasData = true;
-        if (value instanceof Date) {
-          rowData[name] = value.toISOString().split('T')[0];
-        } else if (typeof value === 'object' && 'richText' in (value as object)) {
-          const richTextVal = value as { richText: Array<{ text: string }> };
-          rowData[name] = (richTextVal.richText || []).map((t) => t.text).join('');
-        } else if (typeof value === 'object' && 'result' in (value as object)) {
-          const resultVal = value as { result: unknown };
-          rowData[name] = resultVal.result;
-        } else {
-          rowData[name] = value;
-        }
+        rowData[name] = extracted;
       } else {
         rowData[name] = '';
       }

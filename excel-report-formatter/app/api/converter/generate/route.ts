@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
 import JSZip from 'jszip';
+import { cellValueToString, safeExtractCellValue } from '@/lib/cell-value-utils';
 
 export const runtime = 'nodejs';
 
@@ -23,22 +24,7 @@ async function findSmartHeaderRow(
     let hasSectionMarkers = 0;
 
     row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      const value = cell.value;
-      let text = '';
-
-      if (value !== null && value !== undefined) {
-        if (typeof value === 'object' && value !== null && 'richText' in (value as object)) {
-          const richTextVal = value as { richText: Array<{ text: string }> };
-          text = (richTextVal.richText || []).map((t) => t.text).join('');
-        } else if (typeof value === 'object' && value !== null && 'result' in (value as object)) {
-          const resultVal = value as { result: unknown };
-          text = String(resultVal.result);
-        } else {
-          text = String(value);
-        }
-      }
-
-      const trimmed = text.trim();
+      const trimmed = cellValueToString(cell.value).trim();
       values[colNumber - 1] = trimmed;
 
       if (trimmed.length > 0) {
@@ -71,6 +57,78 @@ async function findSmartHeaderRow(
   return { headerRowNum: headerRow.rowNum, columns };
 }
 
+// 템플릿에서 실제 데이터 삽입 시작 행을 찾기
+// multi-row 헤더(서브헤더 등)를 건너뛰고 실제 데이터가 들어갈 첫 행을 결정
+function findFirstDataRow(
+  worksheet: ExcelJS.Worksheet,
+  headerRowNum: number,
+  maxScan: number = 20
+): number {
+  const lastRow = Math.min(headerRowNum + maxScan, worksheet.rowCount);
+
+  for (let rowNum = headerRowNum + 1; rowNum <= lastRow; rowNum++) {
+    const row = worksheet.getRow(rowNum);
+    let hasNumeric = false;
+    let hasFormula = false;
+    let hasDate = false;
+    let nonEmptyCount = 0;
+    let shortTextOnlyCount = 0;
+
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      const value = cell.value;
+      if (value === null || value === undefined) return;
+
+      nonEmptyCount++;
+
+      if (value instanceof Date) {
+        hasDate = true;
+        return;
+      }
+
+      if (typeof value === 'number') {
+        hasNumeric = true;
+        return;
+      }
+
+      if (typeof value === 'object' && value !== null) {
+        // formula cell with numeric result
+        if ('result' in value) {
+          hasFormula = true;
+          const result = (value as { result: unknown }).result;
+          if (typeof result === 'number') hasNumeric = true;
+          if (result instanceof Date) hasDate = true;
+          return;
+        }
+      }
+
+      // 텍스트 셀 - 짧은 텍스트만 있으면 서브헤더로 판단
+      const text = cellValueToString(value).trim();
+      if (text.length > 0 && text.length <= 15) {
+        shortTextOnlyCount++;
+      }
+    });
+
+    // 빈 행은 건너뛰기
+    if (nonEmptyCount === 0) continue;
+
+    // 숫자, 수식, 날짜가 하나라도 있으면 → 데이터 행
+    if (hasNumeric || hasFormula || hasDate) {
+      return rowNum;
+    }
+
+    // 짧은 텍스트만 있으면 → 서브헤더로 판단, skip
+    if (shortTextOnlyCount === nonEmptyCount) {
+      continue;
+    }
+
+    // 그 외: 데이터 행으로 판단
+    return rowNum;
+  }
+
+  // 폴백: 헤더 바로 다음 행
+  return headerRowNum + 1;
+}
+
 // Excel 데이터 추출
 async function extractExcelData(
   buffer: Buffer,
@@ -94,22 +152,7 @@ async function extractExcelData(
   const columnIndexToName: Array<{ colIndex: number; name: string }> = [];
 
   headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const value = cell.value;
-    let text = '';
-
-    if (value !== null && value !== undefined) {
-      if (typeof value === 'object' && value !== null && 'richText' in (value as object)) {
-        const richTextVal = value as { richText: Array<{ text: string }> };
-        text = (richTextVal.richText || []).map((t) => t.text).join('');
-      } else if (typeof value === 'object' && value !== null && 'result' in (value as object)) {
-        const resultVal = value as { result: unknown };
-        text = String(resultVal.result);
-      } else {
-        text = String(value);
-      }
-    }
-
-    const trimmed = text.trim();
+    const trimmed = cellValueToString(cell.value).trim();
     if (trimmed.length > 0 && trimmed !== 'undefined') {
       columnIndexToName.push({ colIndex: colNumber, name: trimmed });
     }
@@ -126,21 +169,11 @@ async function extractExcelData(
 
     for (const { colIndex, name } of columnIndexToName) {
       const cell = row.getCell(colIndex);
-      const value = cell.value;
+      const extracted = safeExtractCellValue(cell.value);
 
-      if (value !== null && value !== undefined) {
+      if (extracted !== null) {
         hasData = true;
-        if (value instanceof Date) {
-          rowData[name] = value.toISOString().split('T')[0];
-        } else if (typeof value === 'object' && 'richText' in (value as object)) {
-          const richTextVal = value as { richText: Array<{ text: string }> };
-          rowData[name] = (richTextVal.richText || []).map((t) => t.text).join('');
-        } else if (typeof value === 'object' && 'result' in (value as object)) {
-          const resultVal = value as { result: unknown };
-          rowData[name] = resultVal.result;
-        } else {
-          rowData[name] = value;
-        }
+        rowData[name] = extracted;
       } else {
         rowData[name] = '';
       }
@@ -269,22 +302,7 @@ async function generateExcelReports(
   const headerRow = templateWs.getRow(templateHeaderRow);
 
   headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const value = cell.value;
-    let text = '';
-
-    if (value !== null && value !== undefined) {
-      if (typeof value === 'object' && 'richText' in (value as object)) {
-        const richTextVal = value as { richText: Array<{ text: string }> };
-        text = (richTextVal.richText || []).map((t) => t.text).join('');
-      } else if (typeof value === 'object' && 'result' in (value as object)) {
-        const resultVal = value as { result: unknown };
-        text = String(resultVal.result);
-      } else {
-        text = String(value);
-      }
-    }
-
-    const trimmed = text.trim();
+    const trimmed = cellValueToString(cell.value).trim();
     if (trimmed) {
       templateColumnIndex.set(trimmed, colNumber);
     }
@@ -304,8 +322,8 @@ async function generateExcelReports(
     const newWs = newWorkbook.getWorksheet(targetTemplateSheet);
     if (!newWs) continue;
 
-    // 데이터 행 위치 (템플릿 헤더 다음 행)
-    const dataRowNum = templateHeaderRow + 1;
+    // 데이터 행 위치 (multi-row 헤더를 건너뛰고 실제 데이터 삽입 위치 결정)
+    const dataRowNum = findFirstDataRow(newWs, templateHeaderRow);
     const targetRow = newWs.getRow(dataRowNum);
 
     // 매핑에 따라 데이터 채우기

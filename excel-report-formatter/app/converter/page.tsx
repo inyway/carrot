@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import CubeLoader from '@/components/CubeLoader';
 import ContextChat, { type MappingContext } from '@/app/components/ContextChat';
+import { safeCellDisplay } from '@/lib/cell-value-utils';
 
 // 지원하는 템플릿 형식
 // type TemplateFormat = 'xlsx' | 'csv' | 'hwpx';
@@ -481,30 +482,69 @@ export default function ConverterPage() {
           }
         }
       } else {
-        // Excel/CSV 템플릿 자동 매핑 (이름 기반 매칭)
+        // Excel/CSV 템플릿 AI 자동 매핑
         const templateFields = templateFile.placeholders || templateFile.columns || [];
         const dataColumns = dataFile.columns || [];
 
-        const newMappings: MappingItem[] = templateFields.map(field => {
-          // 정확히 일치하는 컬럼 찾기
-          const exactMatch = dataColumns.find(col =>
-            col.toLowerCase() === field.toLowerCase()
-          );
+        try {
+          const res = await fetch('/api/converter/ai-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              templateColumns: templateFields,
+              dataColumns,
+              templateSampleData: templateFile.templatePreview?.slice(0, 2),
+              dataSampleData: previewData?.slice(0, 3),
+            }),
+          });
 
-          // 포함 관계로 매칭
-          const partialMatch = !exactMatch ? dataColumns.find(col =>
-            col.toLowerCase().includes(field.toLowerCase()) ||
-            field.toLowerCase().includes(col.toLowerCase())
-          ) : null;
+          if (res.ok) {
+            const result = await res.json();
+            if (result.success && result.mappings) {
+              // AI 매핑 결과를 MappingItem[] 형태로 변환
+              const aiMappings: MappingItem[] = (result.mappings as Array<{
+                templateField: string;
+                dataColumn: string;
+                confidence: number;
+              }>).map(m => ({
+                templateField: m.templateField,
+                dataColumn: m.dataColumn,
+                confidence: m.confidence,
+              }));
 
-          return {
-            templateField: field,
-            dataColumn: exactMatch || partialMatch || '',
-            confidence: exactMatch ? 1.0 : partialMatch ? 0.7 : 0,
-          };
-        });
+              // 매핑되지 않은 템플릿 필드도 빈 매핑으로 추가
+              const mappedFields = new Set(aiMappings.map(m => m.templateField));
+              const unmappedEntries: MappingItem[] = templateFields
+                .filter(f => !mappedFields.has(f))
+                .map(f => ({ templateField: f, dataColumn: '', confidence: 0 }));
 
-        setMappings(newMappings);
+              setMappings([...aiMappings, ...unmappedEntries]);
+            } else {
+              throw new Error('AI mapping returned no results');
+            }
+          } else {
+            throw new Error('AI mapping request failed');
+          }
+        } catch (aiError) {
+          console.error('AI mapping failed, falling back to name matching:', aiError);
+          // fallback: 기존 이름 매칭
+          const newMappings: MappingItem[] = templateFields.map(field => {
+            const exactMatch = dataColumns.find(col =>
+              col.toLowerCase() === field.toLowerCase()
+            );
+            const partialMatch = !exactMatch ? dataColumns.find(col =>
+              col.toLowerCase().includes(field.toLowerCase()) ||
+              field.toLowerCase().includes(col.toLowerCase())
+            ) : null;
+
+            return {
+              templateField: field,
+              dataColumn: exactMatch || partialMatch || '',
+              confidence: exactMatch ? 1.0 : partialMatch ? 0.7 : 0,
+            };
+          });
+          setMappings(newMappings);
+        }
       }
     } catch (error) {
       console.error('Auto mapping error:', error);
@@ -1273,7 +1313,7 @@ export default function ConverterPage() {
                                         >
                                           {mapping && mappedValue !== null && mappedValue !== undefined ? (
                                             <span className="text-purple-800 font-medium truncate block">
-                                              {String(mappedValue)}
+                                              {safeCellDisplay(mappedValue)}
                                             </span>
                                           ) : mapping ? (
                                             <span className="flex items-center justify-center gap-1 text-purple-600">
@@ -1356,7 +1396,7 @@ export default function ConverterPage() {
                                       }`}
                                     >
                                       {value !== null && value !== undefined ? (
-                                        <span className="text-gray-700 truncate block">{String(value)}</span>
+                                        <span className="text-gray-700 truncate block">{safeCellDisplay(value)}</span>
                                       ) : mapping ? (
                                         <span className="text-gray-300 italic">(빈 값)</span>
                                       ) : (
