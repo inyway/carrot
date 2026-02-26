@@ -13,6 +13,7 @@ interface AnalyzeResult {
   sheets?: string[];
   rowCount?: number;
   preview?: Record<string, unknown>[];
+  metadata?: Record<string, string>; // pre-header metadata (Key : Value patterns)
   error?: string;
 }
 
@@ -43,6 +44,19 @@ async function analyzeExcel(
   // Multi-row 헤더 감지 + 복합 컬럼명 생성
   const { compositeColumns, dataStartRow } = detectMultiRowHeaders(worksheet, headerRowNum);
   const columns = compositeColumns.map(c => c.name);
+
+  // Extract metadata from pre-header rows (rows before the header)
+  const metadata: Record<string, string> = {};
+  for (let rowNum = 1; rowNum < headerRowNum; rowNum++) {
+    const row = worksheet.getRow(rowNum);
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      const text = cellValueToString(cell.value).trim();
+      const match = text.match(/^(.+?)\s*:\s*(.+)$/);
+      if (match) {
+        metadata[match[1].trim()] = match[2].trim();
+      }
+    });
+  }
 
   // 데이터 추출 (미리보기용 최대 100행)
   const preview: Record<string, unknown>[] = [];
@@ -93,6 +107,7 @@ async function analyzeExcel(
     sheets,
     rowCount,
     preview,
+    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
   };
 }
 

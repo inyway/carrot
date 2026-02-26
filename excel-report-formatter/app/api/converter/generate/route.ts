@@ -7,6 +7,8 @@ export const runtime = 'nodejs';
 interface MappingItem {
   templateField: string;
   dataColumn: string;
+  isMetadata?: boolean;
+  metadataValue?: string;
 }
 
 // Excel 데이터 추출 (multi-row 헤더 지원)
@@ -165,6 +167,14 @@ async function generateExcelReports(
     }
   }
 
+  // Metadata mappings lookup (templateField -> metadataValue)
+  const metadataMappings = new Map<string, string>();
+  for (const m of mappings) {
+    if (m.isMetadata && m.metadataValue && m.templateField) {
+      metadataMappings.set(m.templateField, m.metadataValue);
+    }
+  }
+
   // 템플릿의 헤더 행 찾기 + multi-row 헤더 감지
   const { headerRowNum: templateHeaderRow } = await findSmartHeaderRow(ws);
   const { compositeColumns: templateCompositeColumns, dataStartRow: firstDataRow } =
@@ -243,8 +253,19 @@ async function generateExcelReports(
     // 매핑에 따라 데이터 채우기
     for (const [templateField, dataColumn] of Array.from(mappingMap.entries())) {
       const colIndex = templateColumnIndex.get(templateField);
-      if (colIndex && rowData[dataColumn] !== undefined) {
-        const cell = targetRow.getCell(colIndex);
+      if (!colIndex) continue;
+
+      const cell = targetRow.getCell(colIndex);
+
+      // Check if this is a metadata constant mapping
+      const metadataValue = metadataMappings.get(templateField);
+      if (metadataValue !== undefined) {
+        cell.value = metadataValue;
+        const style = styleCache.get(colIndex);
+        if (style) {
+          cell.style = style as ExcelJS.Style;
+        }
+      } else if (rowData[dataColumn] !== undefined) {
         const value = rowData[dataColumn];
 
         if (value instanceof Date) {

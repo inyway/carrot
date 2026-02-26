@@ -22,6 +22,7 @@ interface FileInfo {
   selectedSheet?: string;
   rowCount?: number;
   preview?: Record<string, unknown>[];
+  metadata?: Record<string, string>;
 }
 
 // HWPX 테이블 셀 정보
@@ -60,6 +61,9 @@ interface MappingItem {
   // HWPX 전용 필드
   hwpxRow?: number;
   hwpxCol?: number;
+  // Metadata constant mapping
+  isMetadata?: boolean;
+  metadataValue?: string;
 }
 
 // 매핑 검증 결과 인터페이스
@@ -281,6 +285,7 @@ export default function ConverterPage() {
           selectedSheet: result.sheets?.[0],
           rowCount: result.rowCount,
           preview: result.preview,
+          metadata: result.metadata,
         } : null);
 
         setPreviewData(result.preview || null);
@@ -495,6 +500,7 @@ export default function ConverterPage() {
               dataColumns,
               templateSampleData: templateFile.templatePreview?.slice(0, 2),
               dataSampleData: previewData?.slice(0, 3),
+              dataMetadata: dataFile.metadata,
             }),
           });
 
@@ -506,10 +512,14 @@ export default function ConverterPage() {
                 templateField: string;
                 dataColumn: string;
                 confidence: number;
+                isMetadata?: boolean;
+                metadataValue?: string;
               }>).map(m => ({
                 templateField: m.templateField,
                 dataColumn: m.dataColumn,
                 confidence: m.confidence,
+                isMetadata: m.isMetadata,
+                metadataValue: m.metadataValue,
               }));
 
               // 매핑되지 않은 템플릿 필드도 빈 매핑으로 추가
@@ -1023,22 +1033,28 @@ export default function ConverterPage() {
                           <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                           </svg>
-                          <select
-                            value={mapping?.dataColumn || ''}
-                            onChange={(e) => handleMappingChange(field, e.target.value)}
-                            className={`flex-1 px-3 py-2 border rounded-lg text-sm ${
-                              mapping?.dataColumn
-                                ? mapping.confidence && mapping.confidence < 1
-                                  ? 'border-yellow-300 bg-yellow-50'
-                                  : 'border-green-300 bg-green-50'
-                                : 'border-gray-300'
-                            }`}
-                          >
-                            <option value="">-- 선택 --</option>
-                            {(dataFile.columns || []).map((col, colIdx) => (
-                              <option key={colIdx} value={col}>{col}</option>
-                            ))}
-                          </select>
+                          {mapping?.isMetadata ? (
+                            <div className="flex-1 px-3 py-2 border border-blue-300 bg-blue-50 rounded-lg text-sm text-blue-700 truncate" title={`메타데이터: ${mapping.metadataValue}`}>
+                              [META] {mapping.metadataValue}
+                            </div>
+                          ) : (
+                            <select
+                              value={mapping?.dataColumn || ''}
+                              onChange={(e) => handleMappingChange(field, e.target.value)}
+                              className={`flex-1 px-3 py-2 border rounded-lg text-sm ${
+                                mapping?.dataColumn
+                                  ? mapping.confidence && mapping.confidence < 1
+                                    ? 'border-yellow-300 bg-yellow-50'
+                                    : 'border-green-300 bg-green-50'
+                                  : 'border-gray-300'
+                              }`}
+                            >
+                              <option value="">-- 선택 --</option>
+                              {(dataFile.columns || []).map((col, colIdx) => (
+                                <option key={colIdx} value={col}>{col}</option>
+                              ))}
+                            </select>
+                          )}
                         </div>
                       );
                     })}
@@ -1373,7 +1389,7 @@ export default function ConverterPage() {
                                     <div className="truncate">{col}</div>
                                     {mapping && (
                                       <div className="text-[10px] text-purple-600 mt-0.5 truncate">
-                                        ← {mapping.dataColumn}
+                                        ← {mapping.isMetadata ? `[META] ${mapping.metadataValue}` : mapping.dataColumn}
                                       </div>
                                     )}
                                   </th>
@@ -1387,16 +1403,18 @@ export default function ConverterPage() {
                               <tr key={rowIdx}>
                                 {(templateFile.columns || templateFile.placeholders || []).map((col, colIdx) => {
                                   const mapping = mappings.find(m => m.templateField === col);
-                                  const value = mapping?.dataColumn ? row[mapping.dataColumn] : null;
+                                  const value = mapping?.isMetadata
+                                    ? mapping.metadataValue
+                                    : mapping?.dataColumn ? row[mapping.dataColumn] : null;
                                   return (
                                     <td
                                       key={colIdx}
                                       className={`px-3 py-2 border border-gray-200 text-xs text-center ${
-                                        mapping ? 'bg-purple-50' : 'bg-white'
+                                        mapping?.isMetadata ? 'bg-blue-50' : mapping ? 'bg-purple-50' : 'bg-white'
                                       }`}
                                     >
                                       {value !== null && value !== undefined ? (
-                                        <span className="text-gray-700 truncate block">{safeCellDisplay(value)}</span>
+                                        <span className={`truncate block ${mapping?.isMetadata ? 'text-blue-700' : 'text-gray-700'}`}>{safeCellDisplay(value)}</span>
                                       ) : mapping ? (
                                         <span className="text-gray-300 italic">(빈 값)</span>
                                       ) : (
