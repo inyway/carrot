@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
+import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata, findSmartHeaderRow } from '@/lib/cell-value-utils';
 
 export const runtime = 'nodejs';
 
@@ -12,90 +13,8 @@ interface AnalyzeResult {
   sheets?: string[];
   rowCount?: number;
   preview?: Record<string, unknown>[];
+  metadata?: Record<string, string>; // pre-header metadata (Key : Value patterns)
   error?: string;
-}
-
-// 스마트 헤더 행 찾기
-async function findSmartHeaderRow(
-  worksheet: ExcelJS.Worksheet
-): Promise<{ headerRowNum: number; columns: string[] }> {
-  const rows: Array<{ rowNum: number; values: string[]; score: number }> = [];
-
-  // 최대 15행까지 검사 (메타 정보가 많은 파일 대응)
-  for (let rowNum = 1; rowNum <= 15; rowNum++) {
-    const row = worksheet.getRow(rowNum);
-    const values: string[] = [];
-    let nonEmptyCount = 0;
-    let hasShortLabels = 0;
-    let hasSectionMarkers = 0;
-    let hasMetaPattern = 0; // "Key : Value" 패턴
-    let hasNumberColumn = 0; // No., 번호 등
-    let hasNameColumn = 0; // 이름, 성명, 한글이름 등
-
-    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      const value = cell.value;
-      let text = '';
-
-      if (value !== null && value !== undefined) {
-        if (typeof value === 'object' && value !== null && 'richText' in (value as object)) {
-          const richTextVal = value as { richText: Array<{ text: string }> };
-          text = (richTextVal.richText || []).map((t) => t.text).join('');
-        } else if (typeof value === 'object' && value !== null && 'result' in (value as object)) {
-          const resultVal = value as { result: unknown };
-          text = String(resultVal.result);
-        } else {
-          text = String(value);
-        }
-      }
-
-      const trimmed = text.trim();
-      values[colNumber - 1] = trimmed;
-
-      if (trimmed.length > 0) {
-        nonEmptyCount++;
-        if (trimmed.length >= 2 && trimmed.length <= 15) {
-          hasShortLabels++;
-        }
-        if (/^\d+\./.test(trimmed)) {
-          hasSectionMarkers++;
-        }
-        // 메타 정보 패턴 감지 (예: "Class Name : xxx")
-        if (/^[A-Za-z\s]+\s*:\s*.+/.test(trimmed) || /^.+\s*:\s*.+/.test(trimmed)) {
-          hasMetaPattern++;
-        }
-        // 번호 컬럼 감지
-        if (/^(No\.?|번호|순번)$/i.test(trimmed)) {
-          hasNumberColumn++;
-        }
-        // 이름 컬럼 감지
-        if (/^(이름|성명|한글이름|영문이름|Name)$/i.test(trimmed)) {
-          hasNameColumn++;
-        }
-      }
-    });
-
-    // 점수 계산 개선:
-    // - 많은 셀 수 + 짧은 라벨 = 헤더 가능성 높음
-    // - 메타 패턴 (Key: Value) = 헤더 가능성 낮음
-    // - No./이름 컬럼 존재 = 헤더 가능성 매우 높음
-    let score = nonEmptyCount * 2 + hasShortLabels * 3 - hasSectionMarkers * 10 - hasMetaPattern * 15;
-    score += hasNumberColumn * 20 + hasNameColumn * 20;
-
-    if (nonEmptyCount >= 3) {
-      rows.push({ rowNum, values, score });
-    }
-  }
-
-  rows.sort((a, b) => b.score - a.score);
-
-  if (rows.length === 0) {
-    return { headerRowNum: 1, columns: [] };
-  }
-
-  const headerRow = rows[0];
-  const columns = headerRow.values.filter(v => v && v.length > 0 && v !== 'undefined');
-
-  return { headerRowNum: headerRow.rowNum, columns };
 }
 
 // Excel/CSV 분석
@@ -120,68 +39,63 @@ async function analyzeExcel(
   }
 
   // 스마트 헤더 감지
-  const { headerRowNum, columns } = await findSmartHeaderRow(worksheet);
+  const { headerRowNum } = findSmartHeaderRow(worksheet);
+
+  // Multi-row 헤더 감지 + 복합 컬럼명 생성
+  const { compositeColumns, dataStartRow } = detectMultiRowHeaders(worksheet, headerRowNum);
+  const columns = compositeColumns.map(c => c.name);
+
+  // Extract metadata from pre-header rows (rows before the header)
+  const metadata: Record<string, string> = {};
+  for (let rowNum = 1; rowNum < headerRowNum; rowNum++) {
+    const row = worksheet.getRow(rowNum);
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      const text = cellValueToString(cell.value).trim();
+      const match = text.match(/^(.+?)\s*:\s*(.+)$/);
+      if (match) {
+        metadata[match[1].trim()] = match[2].trim();
+      }
+    });
+  }
 
   // 데이터 추출 (미리보기용 최대 100행)
   const preview: Record<string, unknown>[] = [];
   let rowCount = 0;
 
-  // 컬럼 인덱스 매핑 생성
-  const headerRow = worksheet.getRow(headerRowNum);
-  const columnIndexToName: Array<{ colIndex: number; name: string }> = [];
-
-  headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const value = cell.value;
-    let text = '';
-
-    if (value !== null && value !== undefined) {
-      if (typeof value === 'object' && value !== null && 'richText' in (value as object)) {
-        const richTextVal = value as { richText: Array<{ text: string }> };
-        text = (richTextVal.richText || []).map((t) => t.text).join('');
-      } else if (typeof value === 'object' && value !== null && 'result' in (value as object)) {
-        const resultVal = value as { result: unknown };
-        text = String(resultVal.result);
-      } else {
-        text = String(value);
-      }
-    }
-
-    const trimmed = text.trim();
-    if (trimmed.length > 0 && trimmed !== 'undefined') {
-      columnIndexToName.push({ colIndex: colNumber, name: trimmed });
-    }
-  });
+  // 컬럼 인덱스 매핑은 compositeColumns에서 직접 사용
+  const columnIndexToName = compositeColumns;
 
   worksheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
-    if (rowNum <= headerRowNum) return;
+    if (rowNum < dataStartRow) return;
 
-    rowCount++;
     if (preview.length < 100) {
       const rowData: Record<string, unknown> = {};
       let hasData = false;
 
       for (const { colIndex, name } of columnIndexToName) {
         const cell = row.getCell(colIndex);
-        const value = cell.value;
+        const extracted = safeExtractCellValue(cell.value);
 
-        if (value !== null && value !== undefined) {
+        if (extracted !== null) {
           hasData = true;
-          if (value instanceof Date) {
-            rowData[name] = value.toISOString().split('T')[0];
-          } else if (typeof value === 'object' && 'richText' in (value as object)) {
-            const richTextVal = value as { richText: Array<{ text: string }> };
-            rowData[name] = (richTextVal.richText || []).map((t) => t.text).join('');
-          } else if (typeof value === 'object' && 'result' in (value as object)) {
-            const resultVal = value as { result: unknown };
-            rowData[name] = resultVal.result;
-          } else {
-            rowData[name] = value;
-          }
+          rowData[name] = extracted;
         }
       }
 
-      if (hasData) {
+      if (hasData && !isRepeatedHeaderOrMetadata(rowData, columns)) {
+        rowCount++;
         preview.push(rowData);
+      }
+    } else {
+      // 미리보기 범위 밖이라도 행 수는 계속 카운트
+      const rowData: Record<string, unknown> = {};
+      let hasData = false;
+      for (const { colIndex, name } of columnIndexToName) {
+        const extracted = safeExtractCellValue(row.getCell(colIndex).value);
+        if (extracted !== null) { hasData = true; rowData[name] = extracted; }
+      }
+      if (hasData && !isRepeatedHeaderOrMetadata(rowData, columns)) {
+        rowCount++;
       }
     }
   });
@@ -193,6 +107,7 @@ async function analyzeExcel(
     sheets,
     rowCount,
     preview,
+    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
   };
 }
 
