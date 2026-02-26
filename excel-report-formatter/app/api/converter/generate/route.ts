@@ -1,59 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
-import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata } from '@/lib/cell-value-utils';
+import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata, findSmartHeaderRow } from '@/lib/cell-value-utils';
 
 export const runtime = 'nodejs';
 
 interface MappingItem {
   templateField: string;
   dataColumn: string;
-}
-
-// 스마트 헤더 행 찾기
-async function findSmartHeaderRow(
-  worksheet: ExcelJS.Worksheet
-): Promise<{ headerRowNum: number; columns: string[] }> {
-  const rows: Array<{ rowNum: number; values: string[]; score: number }> = [];
-
-  for (let rowNum = 1; rowNum <= 10; rowNum++) {
-    const row = worksheet.getRow(rowNum);
-    const values: string[] = [];
-    let nonEmptyCount = 0;
-    let hasShortLabels = 0;
-    let hasSectionMarkers = 0;
-
-    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      const trimmed = cellValueToString(cell.value).trim();
-      values[colNumber - 1] = trimmed;
-
-      if (trimmed.length > 0) {
-        nonEmptyCount++;
-        if (trimmed.length >= 2 && trimmed.length <= 15) {
-          hasShortLabels++;
-        }
-        if (/^\d+\./.test(trimmed)) {
-          hasSectionMarkers++;
-        }
-      }
-    });
-
-    const score = nonEmptyCount * 2 + hasShortLabels * 3 - hasSectionMarkers * 10;
-
-    if (nonEmptyCount >= 3) {
-      rows.push({ rowNum, values, score });
-    }
-  }
-
-  rows.sort((a, b) => b.score - a.score);
-
-  if (rows.length === 0) {
-    return { headerRowNum: 1, columns: [] };
-  }
-
-  const headerRow = rows[0];
-  const columns = headerRow.values.filter(v => v && v.length > 0 && v !== 'undefined');
-
-  return { headerRowNum: headerRow.rowNum, columns };
 }
 
 // Excel 데이터 추출 (multi-row 헤더 지원)
@@ -72,7 +25,7 @@ async function extractExcelData(
     throw new Error(`시트 "${targetSheet}"를 찾을 수 없습니다.`);
   }
 
-  const { headerRowNum } = await findSmartHeaderRow(worksheet);
+  const { headerRowNum } = findSmartHeaderRow(worksheet);
 
   // Multi-row 헤더 감지 + 복합 컬럼명 생성
   const { compositeColumns, dataStartRow } = detectMultiRowHeaders(worksheet, headerRowNum);
@@ -233,17 +186,55 @@ async function generateExcelReports(
     }
   }
 
-  // 기존 데이터 행 초기화 (shared formula 충돌 방지)
   const lastRowNum = ws.rowCount;
+
+  // === Phase 1: Shared formula → standalone formula 변환 (충돌 방지) ===
   for (let rowNum = firstDataRow; rowNum <= lastRowNum; rowNum++) {
     const row = ws.getRow(rowNum);
-    row.eachCell((cell) => {
-      cell.value = null;
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      if (cell.value && typeof cell.value === 'object' &&
+          ('sharedFormula' in cell.value ||
+           (cell.value as unknown as Record<string, unknown>).shareType === 'shared')) {
+        const translatedFormula = cell.formula; // ExcelJS _getTranslatedFormula()
+        const result = cell.result;
+        if (translatedFormula) {
+          cell.value = { formula: translatedFormula, result } as ExcelJS.CellFormulaValue;
+        }
+      }
     });
     row.commit();
   }
 
-  // 모든 데이터행을 하나의 워크시트에 순차 삽입
+  // === Phase 2: 매핑된 컬럼만 선택 초기화 (미매핑 컬럼 보존) ===
+  const mappedColIndices = new Set<number>();
+  for (const [templateField] of Array.from(mappingMap.entries())) {
+    const colIndex = templateColumnIndex.get(templateField);
+    if (colIndex) mappedColIndices.add(colIndex);
+  }
+
+  for (let rowNum = firstDataRow; rowNum <= lastRowNum; rowNum++) {
+    const row = ws.getRow(rowNum);
+    mappedColIndices.forEach((colIdx) => {
+      row.getCell(colIdx).value = null;
+    });
+    row.commit();
+  }
+
+  // === Phase 4 준비: 첫 데이터 행의 미매핑 컬럼 수식 스냅샷 ===
+  const formulaSnapshot = new Map<number, { formula: string; style: Partial<ExcelJS.Style> }>();
+  for (const { colIndex } of templateCompositeColumns) {
+    if (!mappedColIndices.has(colIndex)) {
+      const cell = ws.getRow(firstDataRow).getCell(colIndex);
+      if (cell.formula) {
+        formulaSnapshot.set(colIndex, {
+          formula: cell.formula,
+          style: JSON.parse(JSON.stringify(cell.style || {})),
+        });
+      }
+    }
+  }
+
+  // === Phase 3: 데이터 쓰기 (매핑된 컬럼만) ===
   for (let rowIdx = 0; rowIdx < dataRows.length; rowIdx++) {
     const rowData = dataRows[rowIdx];
     const targetRowNum = firstDataRow + rowIdx;
@@ -273,6 +264,31 @@ async function generateExcelReports(
     }
 
     targetRow.commit();
+  }
+
+  // === Phase 4: 확장 행에 미매핑 컬럼 수식 복사 ===
+  const templateDataRowCount = lastRowNum - firstDataRow + 1;
+  if (dataRows.length > templateDataRowCount) {
+    for (let rowIdx = templateDataRowCount; rowIdx < dataRows.length; rowIdx++) {
+      const targetRowNum = firstDataRow + rowIdx;
+      const targetRow = ws.getRow(targetRowNum);
+      for (const [colIdx, snap] of Array.from(formulaSnapshot.entries())) {
+        // 수식 내 행 번호를 현재 행에 맞게 치환
+        const rowOffset = targetRowNum - firstDataRow;
+        const newFormula = snap.formula.replace(
+          /(\$?)([A-Z]+)(\$?)(\d+)/g,
+          (match, dollarCol: string, col: string, dollarRow: string, rowStr: string) => {
+            if (dollarRow === '$') return match; // 절대 참조는 유지
+            const origRow = parseInt(rowStr);
+            const newRow = origRow + rowOffset;
+            return `${dollarCol}${col}${newRow}`;
+          }
+        );
+        targetRow.getCell(colIdx).value = { formula: newFormula } as ExcelJS.CellFormulaValue;
+        targetRow.getCell(colIdx).style = snap.style as ExcelJS.Style;
+      }
+      targetRow.commit();
+    }
   }
 
   // 단일 .xlsx 반환

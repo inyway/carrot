@@ -124,6 +124,88 @@ export function detectMultiRowHeaders(
 }
 
 /**
+ * 스마트 헤더 행 찾기.
+ * multi-row 헤더(병합 셀)가 있는 경우, 서브헤더 행(1회차, 2회차...)이
+ * 프라이머리 헤더(No., 이름, 이메일...)보다 셀 수가 많아 잘못 선택되는 문제 해결.
+ *
+ * 핵심: 프라이머리 헤더는 항상 왼쪽(초기) 컬럼부터 시작하고,
+ * 서브헤더는 초기 컬럼이 비어있음 (상위 병합 셀의 하위 분류이므로).
+ */
+export function findSmartHeaderRow(
+  worksheet: ExcelJS.Worksheet
+): { headerRowNum: number; columns: string[] } {
+  const candidates: Array<{
+    rowNum: number;
+    values: string[];
+    score: number;
+    earlyColumnsFilled: number;
+  }> = [];
+
+  for (let rowNum = 1; rowNum <= 10; rowNum++) {
+    const row = worksheet.getRow(rowNum);
+    const values: string[] = [];
+    let nonEmptyCount = 0;
+    let hasShortLabels = 0;
+    let hasSectionMarkers = 0;
+
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const trimmed = cellValueToString(cell.value).trim();
+      values[colNumber - 1] = trimmed;
+
+      if (trimmed.length > 0) {
+        nonEmptyCount++;
+        if (trimmed.length >= 2 && trimmed.length <= 15) {
+          hasShortLabels++;
+        }
+        if (/^\d+\./.test(trimmed)) {
+          hasSectionMarkers++;
+        }
+      }
+    });
+
+    if (nonEmptyCount >= 3) {
+      const score = nonEmptyCount * 2 + hasShortLabels * 3 - hasSectionMarkers * 10;
+
+      // 초기 컬럼(1~4)에 값이 있는지 확인
+      // 프라이머리 헤더는 col 1부터 시작, 서브헤더는 col 5+부터 시작하는 패턴
+      let earlyColumnsFilled = 0;
+      for (let i = 0; i < Math.min(4, values.length); i++) {
+        if (values[i] && values[i].length > 0) earlyColumnsFilled++;
+      }
+
+      candidates.push({ rowNum, values, score, earlyColumnsFilled });
+    }
+  }
+
+  if (candidates.length === 0) {
+    return { headerRowNum: 1, columns: [] };
+  }
+
+  // 전략: 초기 컬럼에 값이 있는 행 우선 (프라이머리 헤더 지표)
+  // 서브헤더 행은 초기 컬럼이 비어있음 (상위 병합 셀의 하위 분류)
+  const withEarlyContent = candidates.filter(r => r.earlyColumnsFilled >= 2);
+
+  let selected;
+  if (withEarlyContent.length > 0) {
+    // 초기 컬럼 채움 수가 같으면 스코어로 결정
+    withEarlyContent.sort((a, b) => {
+      if (b.earlyColumnsFilled !== a.earlyColumnsFilled) {
+        return b.earlyColumnsFilled - a.earlyColumnsFilled;
+      }
+      return b.score - a.score;
+    });
+    selected = withEarlyContent[0];
+  } else {
+    // 폴백: 원래 스코어링
+    candidates.sort((a, b) => b.score - a.score);
+    selected = candidates[0];
+  }
+
+  const columns = selected.values.filter(v => v && v.length > 0 && v !== 'undefined');
+  return { headerRowNum: selected.rowNum, columns };
+}
+
+/**
  * 데이터 행이 반복 헤더나 메타데이터 행인지 판별합니다.
  * - 반복 헤더: 3개 이상의 컬럼 값이 해당 컬럼 헤더명과 정확히 일치
  * - 메타데이터: 대부분의 셀이 동일한 긴 텍스트 (병합된 메타 행)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
-import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata } from '@/lib/cell-value-utils';
+import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata, findSmartHeaderRow } from '@/lib/cell-value-utils';
 
 export const runtime = 'nodejs';
 
@@ -14,53 +14,6 @@ interface AnalyzeResult {
   rowCount?: number;
   preview?: Record<string, unknown>[];
   error?: string;
-}
-
-// 스마트 헤더 행 찾기
-async function findSmartHeaderRow(
-  worksheet: ExcelJS.Worksheet
-): Promise<{ headerRowNum: number; columns: string[] }> {
-  const rows: Array<{ rowNum: number; values: string[]; score: number }> = [];
-
-  for (let rowNum = 1; rowNum <= 10; rowNum++) {
-    const row = worksheet.getRow(rowNum);
-    const values: string[] = [];
-    let nonEmptyCount = 0;
-    let hasShortLabels = 0;
-    let hasSectionMarkers = 0;
-
-    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      const trimmed = cellValueToString(cell.value).trim();
-      values[colNumber - 1] = trimmed;
-
-      if (trimmed.length > 0) {
-        nonEmptyCount++;
-        if (trimmed.length >= 2 && trimmed.length <= 15) {
-          hasShortLabels++;
-        }
-        if (/^\d+\./.test(trimmed)) {
-          hasSectionMarkers++;
-        }
-      }
-    });
-
-    const score = nonEmptyCount * 2 + hasShortLabels * 3 - hasSectionMarkers * 10;
-
-    if (nonEmptyCount >= 3) {
-      rows.push({ rowNum, values, score });
-    }
-  }
-
-  rows.sort((a, b) => b.score - a.score);
-
-  if (rows.length === 0) {
-    return { headerRowNum: 1, columns: [] };
-  }
-
-  const headerRow = rows[0];
-  const columns = headerRow.values.filter(v => v && v.length > 0 && v !== 'undefined');
-
-  return { headerRowNum: headerRow.rowNum, columns };
 }
 
 // Excel/CSV 분석
@@ -85,7 +38,7 @@ async function analyzeExcel(
   }
 
   // 스마트 헤더 감지
-  const { headerRowNum } = await findSmartHeaderRow(worksheet);
+  const { headerRowNum } = findSmartHeaderRow(worksheet);
 
   // Multi-row 헤더 감지 + 복합 컬럼명 생성
   const { compositeColumns, dataStartRow } = detectMultiRowHeaders(worksheet, headerRowNum);
