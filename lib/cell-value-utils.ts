@@ -37,7 +37,7 @@ export function detectMultiRowHeaders(
     let hasFormula = false;
     let shortTextCount = 0;
     let dateCount = 0;
-    let numericCount = 0;
+    let _numericCount = 0;
     let matchesPrimaryCount = 0;
 
     row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
@@ -58,7 +58,7 @@ export function detectMultiRowHeaders(
         return;
       }
       if (typeof value === 'number') {
-        numericCount++;
+        _numericCount++;
         return;
       }
       if (typeof value === 'object' && value !== null && 'result' in value) {
