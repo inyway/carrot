@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
-import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata, findSmartHeaderRow } from '@/lib/cell-value-utils';
+import { safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata, findSmartHeaderRow } from '@/lib/cell-value-utils';
 
 export const runtime = 'nodejs';
 
