@@ -221,29 +221,37 @@ function dateBasedAttendanceMapping(
     return []; // Template doesn't have parseable dates, fall back to positional
   }
 
-  // Get first data row to extract day values from raw data columns
-  const firstDataRow = dataSampleData?.[0];
-
   // Build raw data date index
   const usedTemplateCols = new Set<string>();
   for (const dataCol of dataAttendanceCols) {
     const month = extractMonthFromDataCol(dataCol);
     if (!month) continue;
 
-    // Try to get day from sample data
+    // Try to get day from ANY sample data row (not just the first)
+    // Raw data has 2-row-per-student pattern: date row ("02(Tu)") + value row ("Y"/"N")
     let day: number | null = null;
-    if (firstDataRow && firstDataRow[dataCol] !== undefined) {
-      day = extractDayFromSampleValue(firstDataRow[dataCol]);
+    if (dataSampleData) {
+      for (const row of dataSampleData) {
+        if (row[dataCol] !== undefined) {
+          const extracted = extractDayFromSampleValue(row[dataCol]);
+          if (extracted !== null) {
+            day = extracted;
+            break;
+          }
+        }
+      }
     }
 
     if (day !== null) {
       const dateKey = `${month}-${day}`;
       const matchedTemplateCol = templateDateMap.get(dateKey);
-      if (matchedTemplateCol && !usedTemplateCols.has(matchedTemplateCol)) {
+      if (matchedTemplateCol) {
+        // Allow multiple data columns to map to the same template column
+        // (different class groups may contribute to the same date slot)
         results.push({
           templateField: matchedTemplateCol,
           dataColumn: dataCol,
-          confidence: 0.95,
+          confidence: usedTemplateCols.has(matchedTemplateCol) ? 0.85 : 0.95,
           reason: `날짜 매칭 (${month}월 ${day}일)`,
         });
         usedTemplateCols.add(matchedTemplateCol);

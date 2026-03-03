@@ -499,7 +499,7 @@ export default function ConverterPage() {
               templateColumns: templateFields,
               dataColumns,
               templateSampleData: templateFile.templatePreview?.slice(0, 2),
-              dataSampleData: previewData?.slice(0, 3),
+              dataSampleData: previewData,
               dataMetadata: dataFile.metadata,
             }),
           });
