@@ -37,6 +37,7 @@ export function detectMultiRowHeaders(
     let hasFormula = false;
     let shortTextCount = 0;
     let dateCount = 0;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     let _numericCount = 0;
     let matchesPrimaryCount = 0;
 
