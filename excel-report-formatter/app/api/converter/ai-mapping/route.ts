@@ -21,18 +21,26 @@ interface MappingResult {
 
 // --- Column normalization helpers ---
 
-/** Normalize column name: replace newlines with spaces, trim */
+/** Normalize column name: replace newlines with spaces, strip trailing dots, trim */
 function normalizeColName(name: string): string {
-  return name.replace(/\n/g, ' ').trim();
+  return name.replace(/\n/g, ' ').replace(/\.+$/, '').trim();
 }
 
-/** Detect if a column is an attendance date column (e.g. "4월_1회차_14 (Mo)", "1 Week_1_09월 29일") */
+/** Strip composite prefixes like "class 정보_", "학습자 정보_", "출결현황_" from column names */
+function stripCompositePrefix(name: string): string {
+  return name.replace(/^[^_]+_/g, '').trim();
+}
+
+/** Detect if a column is an attendance date column (e.g. "4월_1회차_14 (Mo)", "1 Week_1_09월 29일", "12월_1회차") */
 function isAttendanceColumn(colName: string): boolean {
   const normalized = normalizeColName(colName);
   // Must contain a numeric + time-related keyword
   if (!/\d+\s*(week|월|회차)/i.test(normalized)) return false;
-  // Must NOT be a summary column
-  if (/출결|출석률|결석|합계|비고|미참석|출석\s*\(|공결|회차\s*$/i.test(normalized)) return false;
+  // Must NOT be a summary column (출석률, 결석 등)
+  // "회차" alone (e.g. "출결현황_회차") is summary, but "N회차" (e.g. "12월_1회차") is attendance
+  if (/출결|출석률|결석|합계|비고|미참석|출석\s*\(|공결/i.test(normalized)) return false;
+  // Pure "회차" without a preceding number = summary column
+  if (/(?<!\d)회차\s*$/i.test(normalized)) return false;
   return true;
 }
 
@@ -47,7 +55,11 @@ function normalizeSummaryCol(name: string): string {
 /** Check if a column is a summary/statistics column */
 function isSummaryColumn(colName: string): boolean {
   const normalized = normalizeColName(colName);
-  return /출석\s*\(|결석\s*\(|지각\s*\(|출석률|실\s*출석률|BZ|공결|미참석|업무|회차$/i.test(normalized);
+  // "N회차" (e.g. "12월_1회차") is NOT summary — it's an attendance column
+  // Pure "회차" (e.g. "출결현황_회차") IS summary
+  if (/출석\s*\(|결석\s*\(|지각\s*\(|출석률|실\s*출석률|BZ|공결|미참석|업무/i.test(normalized)) return true;
+  if (/(?<!\d)회차\s*$/i.test(normalized)) return true;
+  return false;
 }
 
 // --- Metadata field mapping ---
@@ -130,12 +142,116 @@ function findSynonymMatch(
   return null;
 }
 
+// --- Date extraction helpers for attendance matching ---
+
+interface ParsedDate {
+  month?: number;
+  day?: number;
+}
+
+/**
+ * Extract ALL dates from template column name.
+ * Template columns may contain multiple dates (one per class schedule).
+ * e.g. "1 Week_1_09월 29일_09월 30일" → [{month:9, day:29}, {month:9, day:30}]
+ */
+function extractDatesFromTemplateCol(colName: string): ParsedDate[] {
+  const dates: ParsedDate[] = [];
+  const regex = /(\d{1,2})월\s*(\d{1,2})일/g;
+  let match;
+  while ((match = regex.exec(colName)) !== null) {
+    dates.push({ month: parseInt(match[1], 10), day: parseInt(match[2], 10) });
+  }
+  return dates;
+}
+
+/**
+ * Extract month from raw data column name.
+ * e.g. "12월_1회차" → 12, "9월_3회차" → 9
+ */
+function extractMonthFromDataCol(colName: string): number | null {
+  const match = colName.match(/(\d{1,2})월/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+/**
+ * Extract day from raw data sample value.
+ * e.g. "02(Tu)" → 2, "14(Mo)" → 14, "29(Wed)" → 29
+ */
+function extractDayFromSampleValue(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  const match = str.match(/^(\d{1,2})\s*\(/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+/**
+ * Date-based attendance column matching.
+ * Matches template columns (with full dates like "09월 29일") to raw data columns
+ * (with month in header "12월_1회차" and day in first data row "02(Tu)").
+ */
+function dateBasedAttendanceMapping(
+  templateAttendanceCols: string[],
+  dataAttendanceCols: string[],
+  dataSampleData?: Record<string, unknown>[]
+): MappingResult[] {
+  const results: MappingResult[] = [];
+
+  // Build template date index: date → column name
+  // Each template column may contain multiple dates (e.g. Mon date + Tue date)
+  const templateDateMap = new Map<string, string>();
+  for (const col of templateAttendanceCols) {
+    const dates = extractDatesFromTemplateCol(col);
+    for (const date of dates) {
+      if (date.month && date.day) {
+        templateDateMap.set(`${date.month}-${date.day}`, col);
+      }
+    }
+  }
+
+  if (templateDateMap.size === 0) {
+    return []; // Template doesn't have parseable dates, fall back to positional
+  }
+
+  // Get first data row to extract day values from raw data columns
+  const firstDataRow = dataSampleData?.[0];
+
+  // Build raw data date index
+  const usedTemplateCols = new Set<string>();
+  for (const dataCol of dataAttendanceCols) {
+    const month = extractMonthFromDataCol(dataCol);
+    if (!month) continue;
+
+    // Try to get day from sample data
+    let day: number | null = null;
+    if (firstDataRow && firstDataRow[dataCol] !== undefined) {
+      day = extractDayFromSampleValue(firstDataRow[dataCol]);
+    }
+
+    if (day !== null) {
+      const dateKey = `${month}-${day}`;
+      const matchedTemplateCol = templateDateMap.get(dateKey);
+      if (matchedTemplateCol && !usedTemplateCols.has(matchedTemplateCol)) {
+        results.push({
+          templateField: matchedTemplateCol,
+          dataColumn: dataCol,
+          confidence: 0.95,
+          reason: `날짜 매칭 (${month}월 ${day}일)`,
+        });
+        usedTemplateCols.add(matchedTemplateCol);
+      }
+    }
+  }
+
+  return results;
+}
+
 // --- Attendance-aware mapping logic ---
 
 function attendanceAwareMapping(
   templateColumns: string[],
   dataColumns: string[],
-  metadata?: Record<string, string>
+  metadata?: Record<string, string>,
+  dataSampleData?: Record<string, unknown>[]
 ): MappingResult[] {
   const results: MappingResult[] = [];
   const usedDataColumns = new Set<string>();
@@ -222,7 +338,59 @@ function attendanceAwareMapping(
       continue;
     }
 
-    // 1c. Synonym match
+    // 1c. Partial match with composite prefix stripping
+    // Handles "강사" ↔ "class 정보_Teacher Name" by stripping "class 정보_" first
+    const prefixStrippedMatch = dataIdentityCols.find(dc => {
+      if (usedDataColumns.has(dc)) return false;
+      const stripped = stripCompositePrefix(normalizeColName(dc)).toLowerCase();
+      return stripped === templateNorm || stripped.includes(templateNorm) || templateNorm.includes(stripped);
+    });
+    if (prefixStrippedMatch) {
+      results.push({
+        templateField: templateCol,
+        dataColumn: prefixStrippedMatch,
+        confidence: 0.75,
+        reason: '접두사 제거 후 부분 일치',
+      });
+      usedDataColumns.add(prefixStrippedMatch);
+      mappedTemplateFields.add(templateCol);
+      continue;
+    }
+
+    // 1d. METADATA_FIELD_MAP cross-language matching
+    // Handles "강사" ↔ "Teacher Name" via field map synonyms
+    // Only match short column names (≤8 chars) to avoid false positives like "추가 입과 및 클래스 변경" → "클래스"
+    const metaFieldEntry = templateNorm.length <= 8
+      ? Object.entries(METADATA_FIELD_MAP).find(
+          ([key]) => key === templateNorm || templateNorm === key
+        )
+      : null;
+    if (metaFieldEntry) {
+      const [, aliases] = metaFieldEntry;
+      const metaMatch = dataIdentityCols.find(dc => {
+        if (usedDataColumns.has(dc)) return false;
+        const dataNorm = normalizeColName(dc).toLowerCase();
+        const dataStripped = stripCompositePrefix(dataNorm).toLowerCase();
+        return aliases.some(alias => {
+          const aliasLower = alias.toLowerCase();
+          return dataNorm === aliasLower || dataStripped === aliasLower ||
+            dataNorm.includes(aliasLower) || dataStripped.includes(aliasLower);
+        });
+      });
+      if (metaMatch) {
+        results.push({
+          templateField: templateCol,
+          dataColumn: metaMatch,
+          confidence: 0.85,
+          reason: `필드맵 매칭 (${metaFieldEntry[0]})`,
+        });
+        usedDataColumns.add(metaMatch);
+        mappedTemplateFields.add(templateCol);
+        continue;
+      }
+    }
+
+    // 1e. Synonym match
     const remainingDataCols = dataIdentityCols.filter(dc => !usedDataColumns.has(dc));
     const synonymMatch = findSynonymMatch(templateCol, remainingDataCols);
     if (synonymMatch) {
@@ -238,18 +406,32 @@ function attendanceAwareMapping(
     }
   }
 
-  // --- Step 2: Attendance date columns - positional matching ---
+  // --- Step 2: Attendance date columns - date-based matching ---
   if (hasAttendancePattern) {
-    const matchCount = Math.min(templateAttendanceCols.length, dataAttendanceCols.length);
-    for (let i = 0; i < matchCount; i++) {
-      results.push({
-        templateField: templateAttendanceCols[i],
-        dataColumn: dataAttendanceCols[i],
-        confidence: 0.85,
-        reason: `출결 날짜 위치 매칭 (${i + 1}번째)`,
-      });
-      usedDataColumns.add(dataAttendanceCols[i]);
-      mappedTemplateFields.add(templateAttendanceCols[i]);
+    // Try date-based matching first, fall back to positional
+    const dateMatched = dateBasedAttendanceMapping(
+      templateAttendanceCols, dataAttendanceCols, dataSampleData
+    );
+
+    if (dateMatched.length > 0) {
+      for (const m of dateMatched) {
+        results.push(m);
+        usedDataColumns.add(m.dataColumn);
+        mappedTemplateFields.add(m.templateField);
+      }
+    } else {
+      // Fallback: positional matching
+      const matchCount = Math.min(templateAttendanceCols.length, dataAttendanceCols.length);
+      for (let i = 0; i < matchCount; i++) {
+        results.push({
+          templateField: templateAttendanceCols[i],
+          dataColumn: dataAttendanceCols[i],
+          confidence: 0.85,
+          reason: `출결 날짜 위치 매칭 (${i + 1}번째)`,
+        });
+        usedDataColumns.add(dataAttendanceCols[i]);
+        mappedTemplateFields.add(templateAttendanceCols[i]);
+      }
     }
   }
 
@@ -549,7 +731,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Use attendance-aware mapping (no Gemini needed for positional matching)
-      mappings = attendanceAwareMapping(templateColumns, dataColumns, dataMetadata);
+      mappings = attendanceAwareMapping(templateColumns, dataColumns, dataMetadata, dataSampleData);
 
       // For unmapped identity columns, try Gemini if available
       const geminiApiKey = process.env.GEMINI_API_KEY;
