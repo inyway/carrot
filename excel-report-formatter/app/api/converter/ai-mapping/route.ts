@@ -61,6 +61,15 @@ function summaryBaseKeyword(normalized: string): string {
   return normalized.replace(/\s*\(.*?\)\s*/g, '').trim();
 }
 
+/** Extract codes from parenthetical notation.
+ *  e.g. "공결(BZ)" → ["bz"], "업무_(BZ/VA)" → ["bz", "va"]
+ */
+function extractParenCodes(s: string): string[] {
+  const match = s.match(/\(([^)]+)\)/);
+  if (!match) return [];
+  return match[1].split(/[,/]/).map(c => c.trim().toLowerCase()).filter(c => c.length > 0);
+}
+
 /** Check if a column is a summary/statistics column */
 function isSummaryColumn(colName: string): boolean {
   const normalized = normalizeColName(colName);
@@ -191,6 +200,39 @@ function extractDayFromSampleValue(value: unknown): number | null {
   const str = String(value).trim();
   const match = str.match(/^(\d{1,2})\s*\(/);
   return match ? parseInt(match[1], 10) : null;
+}
+
+/**
+ * Extract embedded field values from class name string.
+ * Typical format: "쿠팡 25-4학기_Biz Conversation_Intermediate3_Mon/Wed 10:00-11:00_Group"
+ * Parts: [company semester]_[program]_[level]_[schedule]_[type]
+ */
+function extractFromClassName(className: string, fieldKey: string): string | null {
+  const parts = className.split('_');
+  if (parts.length < 3) return null;
+
+  const key = fieldKey.toLowerCase();
+
+  if (key === '법인' || key === '회사' || key === 'company') {
+    // First part: strip semester info (e.g., "쿠팡 25-4학기" → "쿠팡")
+    const companyPart = parts[0].replace(/\s*\d{2,4}[-–]?\d*학기.*$/, '').trim();
+    return companyPart.length > 0 ? companyPart : null;
+  }
+
+  if (key === '프로그램' || key === 'program' || key === '교재') {
+    return parts.length >= 2 ? parts[1].trim() : null;
+  }
+
+  if (key === '레벨' || key === 'level') {
+    for (const part of parts) {
+      if (/^(beginner|elementary|pre.?intermediate|intermediate|upper.?intermediate|advanced)/i.test(part.trim())) {
+        return part.trim();
+      }
+    }
+    return parts.length >= 3 ? parts[2].trim() : null;
+  }
+
+  return null;
 }
 
 /**
@@ -521,6 +563,29 @@ function attendanceAwareMapping(
     }
     if (matched) continue;
 
+    // Try parenthetical code matching (e.g. 공결(BZ) ↔ 업무_(BZ/VA) via shared "BZ")
+    const templateCodes = extractParenCodes(templateSummaryNorm);
+    if (templateCodes.length > 0) {
+      for (const dataCol of dataSummaryCols) {
+        if (usedDataColumns.has(dataCol)) continue;
+        const dataSummaryNorm3 = normalizeSummaryCol(dataCol).toLowerCase();
+        const dataCodes = extractParenCodes(dataSummaryNorm3);
+        if (dataCodes.length > 0 && templateCodes.some(tc => dataCodes.includes(tc))) {
+          results.push({
+            templateField: templateCol,
+            dataColumn: dataCol,
+            confidence: 0.8,
+            reason: `출결 요약 코드 매칭 (${templateCodes.join(',')} ∩ ${dataCodes.join(',')})`,
+          });
+          usedDataColumns.add(dataCol);
+          mappedTemplateFields.add(templateCol);
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (matched) continue;
+
     // Also try matching against all remaining data columns (not just summary)
     const allRemainingData = dataColumns.filter(dc => !usedDataColumns.has(dc));
     for (const dataCol of allRemainingData) {
@@ -570,6 +635,50 @@ function attendanceAwareMapping(
           });
           mappedTemplateFields.add(templateCol);
           break;
+        }
+      }
+    }
+  }
+
+  // --- Step 5: Extract embedded fields from class name for unmapped metadata columns ---
+  // Handles 법인, 레벨, 프로그램 embedded in Class Name (e.g. "쿠팡 25-4학기_Biz Conversation_Intermediate3_...")
+  const classNameCol = dataColumns.find(dc => {
+    const lower = normalizeColName(dc).toLowerCase();
+    return lower.includes('class name') || lower.includes('클래스명') ||
+           lower.includes('class_name') || stripCompositePrefix(lower).includes('class name');
+  });
+
+  if (classNameCol && dataSampleData && dataSampleData.length > 0) {
+    let classNameValue: string | null = null;
+    for (const row of dataSampleData) {
+      if (row[classNameCol]) {
+        classNameValue = String(row[classNameCol]).trim();
+        if (classNameValue.length > 0) break;
+      }
+    }
+
+    if (classNameValue) {
+      for (const templateCol of templateColumns) {
+        if (mappedTemplateFields.has(templateCol)) continue;
+
+        const normalizedCol = normalizeColName(templateCol);
+        const metaEntry = Object.entries(METADATA_FIELD_MAP).find(
+          ([key]) => normalizedCol === key || normalizedCol.includes(key) || key.includes(normalizedCol)
+        );
+
+        if (metaEntry) {
+          const extracted = extractFromClassName(classNameValue, metaEntry[0]);
+          if (extracted) {
+            results.push({
+              templateField: templateCol,
+              dataColumn: `__extracted__${classNameCol}`,
+              confidence: 0.7,
+              reason: `클래스명에서 추출 (${metaEntry[0]}: "${extracted}")`,
+              isMetadata: true,
+              metadataValue: extracted,
+            });
+            mappedTemplateFields.add(templateCol);
+          }
         }
       }
     }
