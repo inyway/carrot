@@ -492,6 +492,23 @@ export default function ConverterPage() {
         const dataColumns = dataFile.columns || [];
 
         try {
+          // Build compact sample: merge first date-like value per column from ALL rows
+          // then prepend it so the API finds dates even for columns with sparse data
+          let compactSample = previewData?.slice(0, 5);
+          if (previewData && previewData.length > 5) {
+            const mergedDateRow: Record<string, unknown> = {};
+            for (const col of dataColumns) {
+              for (const row of previewData) {
+                const val = row[col];
+                if (val !== undefined && val !== null && /^\d{1,2}\s*\(/.test(String(val))) {
+                  mergedDateRow[col] = val;
+                  break;
+                }
+              }
+            }
+            compactSample = [mergedDateRow, ...(previewData?.slice(0, 5) || [])];
+          }
+
           const res = await fetch('/api/converter/ai-mapping', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -499,7 +516,7 @@ export default function ConverterPage() {
               templateColumns: templateFields,
               dataColumns,
               templateSampleData: templateFile.templatePreview?.slice(0, 2),
-              dataSampleData: previewData,
+              dataSampleData: compactSample,
               dataMetadata: dataFile.metadata,
             }),
           });
