@@ -48,8 +48,17 @@ function isAttendanceColumn(colName: string): boolean {
 function normalizeSummaryCol(name: string): string {
   return name
     .replace(/\n/g, ' ')
+    .replace(/\s+/g, ' ')           // collapse multiple spaces
     .replace(/^출결\s*현황[_\s]*/i, '')
+    .replace(/[_\s]+/g, ' ')        // normalize underscores to spaces
     .trim();
+}
+
+/** Extract the base keyword from a summary column for fuzzy matching.
+ *  e.g. "결석(N,C)" → "결석", "출석(Y)" → "출석", "실 출석률" → "실 출석률"
+ */
+function summaryBaseKeyword(normalized: string): string {
+  return normalized.replace(/\s*\(.*?\)\s*/g, '').trim();
 }
 
 /** Check if a column is a summary/statistics column */
@@ -274,7 +283,7 @@ function attendanceAwareMapping(
       const metaFieldEntry = Object.entries(METADATA_FIELD_MAP).find(
         ([key]) => normalizedCol === key || normalizedCol.includes(key) || key.includes(normalizedCol)
       );
-      if (metaFieldEntry && metadata) {
+      if (metaFieldEntry && metadata && Object.keys(metadata).length > 0) {
         templateMetadataCols.push(col);
       } else {
         templateIdentityCols.push(col);
@@ -480,13 +489,37 @@ function attendanceAwareMapping(
     }
     if (matched) continue;
 
+    // Try base keyword match (strip parenthetical differences)
+    // e.g. "결석(N,C)" base="결석" matches "결석(N)" base="결석"
+    const templateBase = summaryBaseKeyword(templateSummaryNorm);
+    if (templateBase.length > 0) {
+      for (const dataCol of dataSummaryCols) {
+        if (usedDataColumns.has(dataCol)) continue;
+        const dataSummaryNorm2 = normalizeSummaryCol(dataCol).toLowerCase();
+        const dataBase = summaryBaseKeyword(dataSummaryNorm2);
+        if (templateBase === dataBase || templateBase.includes(dataBase) || dataBase.includes(templateBase)) {
+          results.push({
+            templateField: templateCol,
+            dataColumn: dataCol,
+            confidence: 0.85,
+            reason: '출결 요약 키워드 매칭',
+          });
+          usedDataColumns.add(dataCol);
+          mappedTemplateFields.add(templateCol);
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (matched) continue;
+
     // Also try matching against all remaining data columns (not just summary)
     const allRemainingData = dataColumns.filter(dc => !usedDataColumns.has(dc));
     for (const dataCol of allRemainingData) {
-      const dataSummaryNorm = normalizeSummaryCol(dataCol).toLowerCase();
-      if (templateSummaryNorm === dataSummaryNorm ||
-        templateSummaryNorm.includes(dataSummaryNorm) ||
-        dataSummaryNorm.includes(templateSummaryNorm)) {
+      const dataSummaryNorm2 = normalizeSummaryCol(dataCol).toLowerCase();
+      if (templateSummaryNorm === dataSummaryNorm2 ||
+        templateSummaryNorm.includes(dataSummaryNorm2) ||
+        dataSummaryNorm2.includes(templateSummaryNorm)) {
         results.push({
           templateField: templateCol,
           dataColumn: dataCol,
