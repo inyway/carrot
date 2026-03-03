@@ -25,8 +25,30 @@ model Company {
 
   templates       Template[]
   cleanReports    CleanReport[]
+  attendanceRules AttendanceRule[]
 
   @@map("companies")
+}
+
+// ============================================
+// 출결 규칙 (AttendanceRule) - 회사별 출결 기호 정의
+// ============================================
+model AttendanceRule {
+  id                          String   @id @default(cuid())
+  companyId                   String
+  name                        String   @default("default")
+  attendedSymbols             String[] @default(["Y", "L"])
+  excusedSymbols              String[] @default(["BZ", "VA"])
+  absentSymbols               String[] @default(["N", "C"])
+  includeExcusedInAttendance  Boolean  @default(true)
+  totalSessionsField          String?  // 총 회차 필드명 (없으면 출결 컬럼 수로 계산)
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, name])
+  @@map("attendance_rules")
 }
 
 // ============================================

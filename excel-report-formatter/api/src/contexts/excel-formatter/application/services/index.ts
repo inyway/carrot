@@ -6,3 +6,6 @@ export * from './rag.service';
 export * from './mapping-profile.service';
 export * from './hwpx-generator.service';
 export * from './hwpx-mapping-graph.service';
+export * from './attendance-report/attendance-mapping.service';
+export * from './attendance-report/attendance-calculation.service';
+export * from './attendance-report/attendance-report-graph.service';

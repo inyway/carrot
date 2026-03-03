@@ -9,6 +9,8 @@ import {
   MappingProfileController,
   CompanyController,
   HwpxController,
+  AttendanceRuleController,
+  AttendanceReportController,
 } from './interface/http/controllers';
 import {
   MappingService,
@@ -20,6 +22,9 @@ import {
   HwpxGeneratorService,
   HwpxMappingGraphService,
 } from './application/services';
+import { AttendanceMappingService } from './application/services/attendance-report/attendance-mapping.service';
+import { AttendanceCalculationService } from './application/services/attendance-report/attendance-calculation.service';
+import { AttendanceReportGraphService } from './application/services/attendance-report/attendance-report-graph.service';
 import {
   GeminiAiMappingAdapter,
   ExceljsParserAdapter,
@@ -28,6 +33,7 @@ import {
   PrismaCleanReportAdapter,
   PrismaMappingProfileAdapter,
   HwpxParserAdapter,
+  PrismaAttendanceRuleAdapter,
 } from './infrastructure/adapters';
 import {
   AI_MAPPING_PORT,
@@ -36,6 +42,7 @@ import {
   EMBEDDING_PORT,
   CLEAN_REPORT_REPOSITORY_PORT,
   MAPPING_PROFILE_REPOSITORY_PORT,
+  ATTENDANCE_RULE_REPOSITORY_PORT,
 } from './application/ports';
 
 @Module({
@@ -49,9 +56,14 @@ import {
     MappingProfileController,
     CompanyController,
     HwpxController,
+    AttendanceRuleController,
+    AttendanceReportController,
   ],
   providers: [
     MappingService,
+    AttendanceMappingService,
+    AttendanceCalculationService,
+    AttendanceReportGraphService,
     TemplateService,
     DataTransformService,
     ReportGeneratorService,
@@ -84,6 +96,10 @@ import {
     {
       provide: MAPPING_PROFILE_REPOSITORY_PORT,
       useClass: PrismaMappingProfileAdapter,
+    },
+    {
+      provide: ATTENDANCE_RULE_REPOSITORY_PORT,
+      useClass: PrismaAttendanceRuleAdapter,
     },
   ],
   exports: [
