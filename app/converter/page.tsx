@@ -600,30 +600,81 @@ export default function ConverterPage() {
           }
         }
       } else {
-        // Excel/CSV 템플릿 자동 매핑 (이름 기반 매칭)
+        // Excel/CSV 템플릿 — AI 매핑 API 호출
         const templateFields = currentTemplateFile.placeholders || currentTemplateFile.columns || [];
         const dataColumns = currentDataFile.columns || [];
 
-        const newMappings: MappingItem[] = templateFields.map(field => {
-          // 정확히 일치하는 컬럼 찾기
-          const exactMatch = dataColumns.find(col =>
-            col.toLowerCase() === field.toLowerCase()
-          );
-
-          // 포함 관계로 매칭
-          const partialMatch = !exactMatch ? dataColumns.find(col =>
-            col.toLowerCase().includes(field.toLowerCase()) ||
-            field.toLowerCase().includes(col.toLowerCase())
-          ) : null;
-
-          return {
-            templateField: field,
-            dataColumn: exactMatch || partialMatch || '',
-            confidence: exactMatch ? 1.0 : partialMatch ? 0.7 : 0,
-          };
+        console.log('[Converter] Excel AI mapping request:', {
+          templateColumns: templateFields.length,
+          dataColumns: dataColumns.length,
         });
 
-        setMappings(newMappings);
+        try {
+          const aiRes = await fetch('/api/converter/ai-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              templateColumns: templateFields,
+              dataColumns: dataColumns,
+              templateSampleData: currentTemplateFile.templatePreview || currentTemplateFile.preview,
+              dataSampleData: currentDataFile.preview,
+            }),
+          });
+
+          if (aiRes.ok) {
+            const aiResult = await aiRes.json();
+            console.log('[Converter] AI mapping result:', {
+              success: aiResult.success,
+              total: aiResult.mappings?.length,
+              mapped: aiResult.mappings?.filter((m: { dataColumn: string }) => m.dataColumn).length,
+            });
+
+            const newMappings: MappingItem[] = (aiResult.mappings || []).map(
+              (m: { templateField: string; dataColumn: string; confidence: number }) => ({
+                templateField: m.templateField,
+                dataColumn: m.dataColumn || '',
+                confidence: m.confidence || 0,
+              })
+            );
+            setMappings(newMappings);
+          } else {
+            console.warn('[Converter] AI mapping API failed, falling back to local matching');
+            // Fallback: 로컬 이름 기반 매칭
+            const newMappings: MappingItem[] = templateFields.map(field => {
+              const exactMatch = dataColumns.find(col =>
+                col.toLowerCase() === field.toLowerCase()
+              );
+              const partialMatch = !exactMatch ? dataColumns.find(col =>
+                col.toLowerCase().includes(field.toLowerCase()) ||
+                field.toLowerCase().includes(col.toLowerCase())
+              ) : null;
+              return {
+                templateField: field,
+                dataColumn: exactMatch || partialMatch || '',
+                confidence: exactMatch ? 1.0 : partialMatch ? 0.7 : 0,
+              };
+            });
+            setMappings(newMappings);
+          }
+        } catch (aiError) {
+          console.error('[Converter] AI mapping error, falling back to local:', aiError);
+          // Fallback: 로컬 이름 기반 매칭
+          const newMappings: MappingItem[] = templateFields.map(field => {
+            const exactMatch = dataColumns.find(col =>
+              col.toLowerCase() === field.toLowerCase()
+            );
+            const partialMatch = !exactMatch ? dataColumns.find(col =>
+              col.toLowerCase().includes(field.toLowerCase()) ||
+              field.toLowerCase().includes(col.toLowerCase())
+            ) : null;
+            return {
+              templateField: field,
+              dataColumn: exactMatch || partialMatch || '',
+              confidence: exactMatch ? 1.0 : partialMatch ? 0.7 : 0,
+            };
+          });
+          setMappings(newMappings);
+        }
       }
       // 매핑 완료 후 자동으로 보고서 생성 + 검증 실행
       setVerificationPhase('waiting');
