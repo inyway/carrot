@@ -6,7 +6,6 @@
  */
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Annotation, StateGraph } from '@langchain/langgraph';
 import {
   AttendanceGraphState,
   AttendanceMappingResult,
@@ -21,42 +20,8 @@ import { AttendanceCalculationService } from './attendance-calculation.service';
 import { EXCEL_PARSER_PORT } from '../../ports';
 import type { ExcelParserPort } from '../../ports';
 
-// LangGraph State Annotation
-const GraphAnnotation = Annotation.Root({
-  // Inputs
-  rawDataBuffer: Annotation<Buffer>,
-  templateBuffer: Annotation<Buffer>,
-  companyId: Annotation<string>,
-  sheetName: Annotation<string | undefined>,
-
-  // Parse output
-  templateColumns: Annotation<string[]>,
-  dataColumns: Annotation<string[]>,
-  templateSampleData: Annotation<Record<string, unknown>[]>,
-  dataSampleData: Annotation<Record<string, unknown>[]>,
-  dataMetadata: Annotation<Record<string, string>>,
-
-  // Map output
-  mappings: Annotation<AttendanceMappingResult[]>,
-  unmappedColumns: Annotation<string[]>,
-
-  // Transform output
-  students: Annotation<StudentRow[]>,
-
-  // Calculate output
-  rule: Annotation<AttendanceRule | null>,
-  renderedStudents: Annotation<StudentRenderData[]>,
-
-  // Render output
-  outputBuffer: Annotation<Buffer | null>,
-
-  // Progress tracking
-  progress: Annotation<number>,
-  currentStep: Annotation<string>,
-  errors: Annotation<string[]>,
-});
-
-type GraphState = typeof GraphAnnotation.State;
+// GraphAnnotation and GraphState are created lazily inside execute() to avoid
+// loading @langchain/langgraph at module init time (saves ~50MB RSS on startup).
 
 @Injectable()
 export class AttendanceReportGraphService {
@@ -83,6 +48,32 @@ export class AttendanceReportGraphService {
     mappedCount: number;
   }> {
     console.log('[AttendanceGraph] Starting pipeline...');
+
+    // Lazy import to avoid loading LangGraph at server startup
+    const { Annotation, StateGraph } = await import('@langchain/langgraph');
+
+    const GraphAnnotation = Annotation.Root({
+      rawDataBuffer: Annotation<Buffer>,
+      templateBuffer: Annotation<Buffer>,
+      companyId: Annotation<string>,
+      sheetName: Annotation<string | undefined>,
+      templateColumns: Annotation<string[]>,
+      dataColumns: Annotation<string[]>,
+      templateSampleData: Annotation<Record<string, unknown>[]>,
+      dataSampleData: Annotation<Record<string, unknown>[]>,
+      dataMetadata: Annotation<Record<string, string>>,
+      mappings: Annotation<AttendanceMappingResult[]>,
+      unmappedColumns: Annotation<string[]>,
+      students: Annotation<StudentRow[]>,
+      rule: Annotation<AttendanceRule | null>,
+      renderedStudents: Annotation<StudentRenderData[]>,
+      outputBuffer: Annotation<Buffer | null>,
+      progress: Annotation<number>,
+      currentStep: Annotation<string>,
+      errors: Annotation<string[]>,
+    });
+
+    type GraphState = typeof GraphAnnotation.State;
 
     const emitProgress = (step: string, progress: number, message: string) => {
       if (onProgress) {
@@ -160,7 +151,7 @@ export class AttendanceReportGraphService {
   // ==========================================
   // Node 1: Parse - Excel 파싱
   // ==========================================
-  private async nodeParse(state: GraphState): Promise<Partial<GraphState>> {
+  private async nodeParse(state: any): Promise<Partial<any>> {
     console.log('[Node:Parse] Parsing Excel files...');
 
     try {
@@ -214,7 +205,7 @@ export class AttendanceReportGraphService {
   // ==========================================
   // Node 2: Map - 컬럼 매핑
   // ==========================================
-  private async nodeMap(state: GraphState): Promise<Partial<GraphState>> {
+  private async nodeMap(state: any): Promise<Partial<any>> {
     console.log('[Node:Map] Mapping columns...');
 
     if (!state.templateColumns?.length || !state.dataColumns?.length) {
@@ -257,7 +248,7 @@ export class AttendanceReportGraphService {
   // ==========================================
   // Node 3: Transform - 데이터 변환
   // ==========================================
-  private async nodeTransform(state: GraphState): Promise<Partial<GraphState>> {
+  private async nodeTransform(state: any): Promise<Partial<any>> {
     console.log('[Node:Transform] Transforming data...');
 
     if (!state.mappings?.length) {
@@ -393,7 +384,7 @@ export class AttendanceReportGraphService {
   // ==========================================
   // Node 4: Calculate - 출결 계산 + 수식 생성
   // ==========================================
-  private async nodeCalculate(state: GraphState): Promise<Partial<GraphState>> {
+  private async nodeCalculate(state: any): Promise<Partial<any>> {
     console.log('[Node:Calculate] Calculating attendance...');
 
     if (!state.students?.length) {
@@ -442,7 +433,7 @@ export class AttendanceReportGraphService {
   // ==========================================
   // Node 5: Render - 템플릿에 데이터 삽입
   // ==========================================
-  private async nodeRender(state: GraphState): Promise<Partial<GraphState>> {
+  private async nodeRender(state: any): Promise<Partial<any>> {
     console.log('[Node:Render] Rendering report...');
 
     if (!state.renderedStudents?.length) {
@@ -490,7 +481,7 @@ export class AttendanceReportGraphService {
         for (const [field, value] of Object.entries(student.identity)) {
           const colNum = templateColMap.get(field);
           if (colNum) {
-            row.getCell(colNum).value = value;
+            row.getCell(colNum).value = value as string;
           }
         }
 
@@ -498,7 +489,7 @@ export class AttendanceReportGraphService {
         for (const [field, symbol] of Object.entries(student.attendance)) {
           const colNum = templateColMap.get(field);
           if (colNum) {
-            row.getCell(colNum).value = symbol;
+            row.getCell(colNum).value = symbol as string;
           }
         }
 
@@ -506,7 +497,7 @@ export class AttendanceReportGraphService {
         for (const [field, value] of Object.entries(student.metadata)) {
           const colNum = templateColMap.get(field);
           if (colNum) {
-            row.getCell(colNum).value = value;
+            row.getCell(colNum).value = value as string;
           }
         }
 
