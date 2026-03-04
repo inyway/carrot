@@ -696,6 +696,12 @@ function fallbackRuleMapping(
   const results: MappingResult[] = [];
   const usedDataColumns = new Set<string>();
 
+  // Pre-compute stripped versions for composite prefix matching (e.g. "class 정보_Class Name" → "Class Name")
+  const strippedDataMap = new Map<string, string>();
+  for (const dc of dataColumns) {
+    strippedDataMap.set(dc, stripCompositePrefix(dc).toLowerCase());
+  }
+
   for (const templateCol of templateColumns) {
     const templateNorm = normalizeColName(templateCol).toLowerCase();
 
@@ -714,11 +720,67 @@ function fallbackRuleMapping(
       continue;
     }
 
-    // 2. Partial match (with normalization)
+    // 2. Exact match after stripping composite prefix
+    const strippedExact = dataColumns.find(
+      dc => !usedDataColumns.has(dc) && strippedDataMap.get(dc) === templateNorm
+    );
+    if (strippedExact) {
+      results.push({
+        templateField: templateCol,
+        dataColumn: strippedExact,
+        confidence: 0.95,
+        reason: '접두사 제거 후 일치',
+      });
+      usedDataColumns.add(strippedExact);
+      continue;
+    }
+
+    // 3. METADATA_FIELD_MAP match (한국어↔영어 필드 매핑)
+    let metadataMatch: string | null = null;
+    for (const [, aliases] of Object.entries(METADATA_FIELD_MAP)) {
+      const aliasesLower = aliases.map(a => a.toLowerCase());
+      if (aliasesLower.includes(templateNorm)) {
+        // Template matches an alias → find data column matching any other alias
+        metadataMatch = dataColumns.find(dc => {
+          if (usedDataColumns.has(dc)) return false;
+          const dcStripped = strippedDataMap.get(dc) || '';
+          const dcNorm = normalizeColName(dc).toLowerCase();
+          return aliasesLower.includes(dcNorm) || aliasesLower.includes(dcStripped);
+        }) || null;
+        if (metadataMatch) break;
+      }
+    }
+    // Also check if template matches a METADATA_FIELD_MAP key
+    if (!metadataMatch) {
+      const mapEntry = METADATA_FIELD_MAP[templateCol] || METADATA_FIELD_MAP[normalizeColName(templateCol)];
+      if (mapEntry) {
+        const aliasesLower = mapEntry.map(a => a.toLowerCase());
+        metadataMatch = dataColumns.find(dc => {
+          if (usedDataColumns.has(dc)) return false;
+          const dcStripped = strippedDataMap.get(dc) || '';
+          const dcNorm = normalizeColName(dc).toLowerCase();
+          return aliasesLower.includes(dcNorm) || aliasesLower.includes(dcStripped);
+        }) || null;
+      }
+    }
+    if (metadataMatch) {
+      results.push({
+        templateField: templateCol,
+        dataColumn: metadataMatch,
+        confidence: 0.9,
+        reason: '필드맵 매칭',
+      });
+      usedDataColumns.add(metadataMatch);
+      continue;
+    }
+
+    // 4. Partial match (with normalization + stripped prefix)
     const partialMatch = dataColumns.find(
       dc => !usedDataColumns.has(dc) && (
         normalizeColName(dc).toLowerCase().includes(templateNorm) ||
-        templateNorm.includes(normalizeColName(dc).toLowerCase())
+        templateNorm.includes(normalizeColName(dc).toLowerCase()) ||
+        (strippedDataMap.get(dc) || '').includes(templateNorm) ||
+        templateNorm.includes(strippedDataMap.get(dc) || '\x00')
       )
     );
     if (partialMatch) {
@@ -732,7 +794,7 @@ function fallbackRuleMapping(
       continue;
     }
 
-    // 3. Synonym match
+    // 5. Synonym match
     const synonymMatch = findSynonymMatch(
       templateCol,
       dataColumns.filter(dc => !usedDataColumns.has(dc))
@@ -746,6 +808,28 @@ function fallbackRuleMapping(
       });
       usedDataColumns.add(synonymMatch.dataColumn);
       continue;
+    }
+
+    // 6. Synonym match with stripped prefix
+    const strippedSynonymMatch = findSynonymMatch(
+      templateCol,
+      dataColumns.filter(dc => !usedDataColumns.has(dc)).map(dc => stripCompositePrefix(dc))
+    );
+    if (strippedSynonymMatch) {
+      // Find original data column
+      const origDc = dataColumns.find(dc =>
+        !usedDataColumns.has(dc) && stripCompositePrefix(dc) === strippedSynonymMatch.dataColumn
+      );
+      if (origDc) {
+        results.push({
+          templateField: templateCol,
+          dataColumn: origDc,
+          confidence: strippedSynonymMatch.confidence * 0.9,
+          reason: `접두사 제거 + ${strippedSynonymMatch.reason}`,
+        });
+        usedDataColumns.add(origDc);
+        continue;
+      }
     }
   }
 
@@ -844,16 +928,31 @@ ${dataSampleStr}
   const templateSet = new Set(templateColumns);
   const dataSet = new Set(dataColumns);
 
-  const filtered = parsed.filter(
-    m => templateSet.has(m.templateField) && dataSet.has(m.dataColumn)
-  );
+  // Build normalized lookup maps for fuzzy matching
+  const templateNormMap = new Map<string, string>();
+  for (const t of templateColumns) templateNormMap.set(normalizeColName(t).toLowerCase().trim(), t);
+  const dataNormMap = new Map<string, string>();
+  for (const d of dataColumns) dataNormMap.set(normalizeColName(d).toLowerCase().trim(), d);
+
+  const filtered = parsed
+    .map(m => {
+      // Try exact match first
+      let tField = templateSet.has(m.templateField) ? m.templateField : null;
+      let dCol = dataSet.has(m.dataColumn) ? m.dataColumn : null;
+
+      // Fuzzy: normalized match
+      if (!tField) tField = templateNormMap.get(normalizeColName(m.templateField).toLowerCase().trim()) || null;
+      if (!dCol) dCol = dataNormMap.get(normalizeColName(m.dataColumn).toLowerCase().trim()) || null;
+
+      if (tField && dCol) {
+        return { ...m, templateField: tField, dataColumn: dCol };
+      }
+      return null;
+    })
+    .filter((m): m is MappingResult => m !== null);
 
   if (filtered.length < parsed.length) {
-    const dropped = parsed.filter(m => !templateSet.has(m.templateField) || !dataSet.has(m.dataColumn));
-    console.warn(`[ai-mapping] Dropped ${dropped.length} mappings due to name mismatch:`);
-    for (const d of dropped.slice(0, 5)) {
-      console.warn(`  template: "${d.templateField}" (exists: ${templateSet.has(d.templateField)}), data: "${d.dataColumn}" (exists: ${dataSet.has(d.dataColumn)})`);
-    }
+    console.warn(`[ai-mapping] Dropped ${parsed.length - filtered.length}/${parsed.length} mappings due to name mismatch`);
   }
 
   return filtered;
