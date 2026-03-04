@@ -1427,7 +1427,9 @@ export default function ConverterPage() {
                           verificationResult?.status === 'warning' ? 'text-yellow-600' :
                           'text-red-600'
                         }`}>
-                          {generating && `${dataFile?.rowCount || 0}개 파일 생성 후 자동 검증합니다`}
+                          {generating && (templateFile?.format === 'hwpx'
+                            ? `${dataFile?.rowCount || 0}개 파일 생성 후 자동 검증합니다`
+                            : '보고서 생성 중...')}
                           {!generating && verificationPhase === 'running' && '템플릿 ↔ Excel ↔ 생성파일 비교'}
                           {!generating && verificationPhase === 'complete' && `정확도: ${verificationResult?.accuracy?.toFixed(1)}%`}
                         </p>
