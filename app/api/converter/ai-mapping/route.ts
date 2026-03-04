@@ -1111,6 +1111,7 @@ export async function POST(request: NextRequest) {
       totalTemplate: templateColumns.length,
       totalData: dataColumns.length,
       mappedCount: mappings.length,
+      isAttendanceReport: isAttendanceReport(templateColumns, dataColumns),
     });
   } catch (error) {
     console.error('AI mapping error:', error);

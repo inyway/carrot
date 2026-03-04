@@ -189,6 +189,7 @@ export default function ConverterPage() {
   const [templateFile, setTemplateFile] = useState<TemplateInfo | null>(null);
   const [dataFile, setDataFile] = useState<FileInfo | null>(null);
   const [mappings, setMappingsState] = useState<MappingItem[]>([]);
+  const [isAttendanceReport, setIsAttendanceReport] = useState(false);
 
   // mappings 상태와 ref를 동시에 업데이트하는 래퍼 함수
   const setMappings = (newMappings: MappingItem[] | ((prev: MappingItem[]) => MappingItem[])) => {
@@ -633,7 +634,13 @@ export default function ConverterPage() {
               success: aiResult.success,
               total: aiResult.mappings?.length,
               mapped: aiResult.mappings?.filter((m: { dataColumn: string }) => m.dataColumn).length,
+              isAttendanceReport: aiResult.isAttendanceReport,
             });
+
+            if (aiResult.isAttendanceReport) {
+              setIsAttendanceReport(true);
+              console.log('[Converter] Attendance report detected — will use attendance pipeline');
+            }
 
             const newMappings: MappingItem[] = (aiResult.mappings || []).map(
               (m: { templateField: string; dataColumn: string; confidence: number }) => ({
@@ -870,9 +877,12 @@ export default function ConverterPage() {
         console.log('[Converter] Generate with mappingContext:', mappingContext);
       }
 
-      // 동기식 API 호출 (HWPX와 동일한 방식)
-      console.log('[Converter] Sending request to /api/converter/generate...');
-      const res = await fetch('/api/converter/generate', {
+      // 출결 보고서면 attendance 파이프라인 사용, 아니면 통합 생성기
+      const generateEndpoint = isAttendanceReport
+        ? '/api/converter/attendance-generate'
+        : '/api/converter/generate';
+      console.log(`[Converter] Sending request to ${generateEndpoint}...`, { isAttendanceReport });
+      const res = await fetch(generateEndpoint, {
         method: 'POST',
         body: formData,
       });
