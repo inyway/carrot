@@ -10,20 +10,19 @@ export async function POST(request: NextRequest) {
     const targetUrl = `${API_BASE_URL}/api/generate`;
     console.log('[converter/generate] Forwarding to:', targetUrl);
 
-    // Rebuild FormData to ensure files are properly forwarded
+    // Rebuild FormData with proper filenames
     const outgoingForm = new FormData();
-    for (const [key, value] of incomingForm.entries()) {
+    incomingForm.forEach((value, key) => {
       if (value instanceof Blob) {
-        // Preserve filename for file uploads
         const filename = (value as File).name || `${key}.bin`;
         outgoingForm.append(key, value, filename);
         console.log(`[converter/generate] File: ${key} = ${filename} (${value.size} bytes)`);
       } else {
-        outgoingForm.append(key, value);
+        outgoingForm.append(key, String(value));
         const preview = String(value).slice(0, 100);
         console.log(`[converter/generate] Field: ${key} = ${preview}...`);
       }
-    }
+    });
 
     const res = await fetch(targetUrl, {
       method: 'POST',

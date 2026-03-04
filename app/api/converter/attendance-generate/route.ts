@@ -12,15 +12,15 @@ export async function POST(request: NextRequest) {
 
     // Rebuild FormData with proper filenames
     const outgoingForm = new FormData();
-    for (const [key, value] of incomingForm.entries()) {
+    incomingForm.forEach((value, key) => {
       if (value instanceof Blob) {
         const filename = (value as File).name || `${key}.bin`;
         outgoingForm.append(key, value, filename);
         console.log(`[converter/attendance-generate] File: ${key} = ${filename} (${value.size} bytes)`);
       } else {
-        outgoingForm.append(key, value);
+        outgoingForm.append(key, String(value));
       }
-    }
+    });
 
     const res = await fetch(targetUrl, {
       method: 'POST',
