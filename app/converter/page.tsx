@@ -871,8 +871,8 @@ export default function ConverterPage() {
       }
 
       // 동기식 API 호출 (HWPX와 동일한 방식)
-      console.log('[Converter] Sending request to /api/generate...');
-      const res = await fetch('http://localhost:4000/api/generate', {
+      console.log('[Converter] Sending request to /api/converter/generate...');
+      const res = await fetch('/api/converter/generate', {
         method: 'POST',
         body: formData,
       });
