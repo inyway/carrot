@@ -7,9 +7,11 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
+    const targetUrl = `${API_BASE_URL}/generate`;
+    console.log('[converter/generate] Forwarding to:', targetUrl);
 
     // Forward multipart form data to NestJS backend
-    const res = await fetch(`${API_BASE_URL}/generate`, {
+    const res = await fetch(targetUrl, {
       method: 'POST',
       body: formData,
     });
@@ -37,9 +39,10 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('[converter/generate] Error:', error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error('[converter/generate] Error:', errMsg, 'API_BASE_URL:', API_BASE_URL);
     return NextResponse.json(
-      { error: '보고서 생성 중 오류가 발생했습니다.' },
+      { error: `보고서 생성 중 오류: ${errMsg}` },
       { status: 500 },
     );
   }
