@@ -839,13 +839,24 @@ ${dataSampleStr}
   }
 
   const parsed: MappingResult[] = JSON.parse(jsonMatch[0]);
+  console.log(`[ai-mapping] Gemini returned ${parsed.length} raw mappings`);
 
   const templateSet = new Set(templateColumns);
   const dataSet = new Set(dataColumns);
 
-  return parsed.filter(
+  const filtered = parsed.filter(
     m => templateSet.has(m.templateField) && dataSet.has(m.dataColumn)
   );
+
+  if (filtered.length < parsed.length) {
+    const dropped = parsed.filter(m => !templateSet.has(m.templateField) || !dataSet.has(m.dataColumn));
+    console.warn(`[ai-mapping] Dropped ${dropped.length} mappings due to name mismatch:`);
+    for (const d of dropped.slice(0, 5)) {
+      console.warn(`  template: "${d.templateField}" (exists: ${templateSet.has(d.templateField)}), data: "${d.dataColumn}" (exists: ${dataSet.has(d.dataColumn)})`);
+    }
+  }
+
+  return filtered;
 }
 
 // --- Detect if this is an attendance report scenario ---
@@ -909,9 +920,12 @@ export async function POST(request: NextRequest) {
     } else {
       // Non-attendance: use original flow (Gemini + fallback)
       const geminiApiKey = process.env.GEMINI_API_KEY;
+      console.log(`[ai-mapping] Non-attendance mode. GEMINI_API_KEY: ${geminiApiKey ? 'SET' : 'NOT SET'}`);
+      console.log(`[ai-mapping] isAttendanceReport: false. Template attendance cols: ${templateColumns.filter(isAttendanceColumn).length}, Data attendance cols: ${dataColumns.filter(isAttendanceColumn).length}`);
 
       if (geminiApiKey) {
         try {
+          console.log(`[ai-mapping] Calling Gemini with ${templateColumns.length} template cols, ${dataColumns.length} data cols`);
           mappings = await aiMapping(
             geminiApiKey,
             templateColumns,
@@ -919,6 +933,7 @@ export async function POST(request: NextRequest) {
             templateSampleData,
             dataSampleData
           );
+          console.log(`[ai-mapping] Gemini success: ${mappings.length} mappings`);
 
           // Supplement with rule-based for unmapped columns
           const aiMappedTemplates = new Set(mappings.map(m => m.templateField));
@@ -931,11 +946,14 @@ export async function POST(request: NextRequest) {
             mappings = [...mappings, ...supplementary];
           }
         } catch (error) {
-          console.error('AI mapping failed, falling back to rules:', error);
+          console.error('[ai-mapping] Gemini FAILED:', error);
           mappings = fallbackRuleMapping(templateColumns, dataColumns);
+          console.log(`[ai-mapping] Fallback rule mapping: ${mappings.length} mappings`);
         }
       } else {
+        console.warn('[ai-mapping] No GEMINI_API_KEY, using fallback only');
         mappings = fallbackRuleMapping(templateColumns, dataColumns);
+        console.log(`[ai-mapping] Fallback rule mapping: ${mappings.length} mappings`);
       }
     }
 
