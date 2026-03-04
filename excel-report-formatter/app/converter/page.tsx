@@ -509,6 +509,16 @@ export default function ConverterPage() {
             compactSample = [mergedDateRow, ...(previewData?.slice(0, 5) || [])];
           }
 
+          console.log('[Converter] AI mapping request:', {
+            templateFields: templateFields.length,
+            dataColumns: dataColumns.length,
+            templateFieldsSample: templateFields.slice(0, 5),
+            dataColumnsSample: dataColumns.slice(0, 5),
+            hasTemplatePreview: !!templateFile.templatePreview,
+            hasSampleData: !!compactSample?.length,
+            metadata: dataFile.metadata,
+          });
+
           const res = await fetch('/api/converter/ai-mapping', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -521,8 +531,10 @@ export default function ConverterPage() {
             }),
           });
 
+          console.log('[Converter] AI mapping response status:', res.status);
           if (res.ok) {
             const result = await res.json();
+            console.log('[Converter] AI mapping result:', { success: result.success, mappedCount: result.mappedCount, total: result.totalTemplate });
             if (result.success && result.mappings) {
               // AI 매핑 결과를 MappingItem[] 형태로 변환
               const aiMappings: MappingItem[] = (result.mappings as Array<{
