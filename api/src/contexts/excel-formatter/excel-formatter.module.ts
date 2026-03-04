@@ -10,6 +10,8 @@ import {
   CompanyController,
   HwpxController,
   UnifiedGenerateController,
+  AttendanceReportController,
+  AttendanceRuleController,
 } from './interface/http/controllers';
 import {
   MappingService,
@@ -22,6 +24,9 @@ import {
   HwpxMappingGraphService,
   UnifiedGeneratorService,
   VerificationGraphService,
+  AttendanceMappingService,
+  AttendanceCalculationService,
+  AttendanceReportGraphService,
 } from './application/services';
 import {
   HeaderDetectionAgent,
@@ -38,6 +43,8 @@ import {
   PrismaCleanReportAdapter,
   PrismaMappingProfileAdapter,
   HwpxParserAdapter,
+  SupabaseStorageAdapter,
+  PrismaAttendanceRuleAdapter,
 } from './infrastructure/adapters';
 import {
   AI_MAPPING_PORT,
@@ -46,6 +53,8 @@ import {
   EMBEDDING_PORT,
   CLEAN_REPORT_REPOSITORY_PORT,
   MAPPING_PROFILE_REPOSITORY_PORT,
+  FILE_STORAGE_PORT,
+  ATTENDANCE_RULE_REPOSITORY_PORT,
 } from './application/ports';
 
 @Module({
@@ -60,6 +69,8 @@ import {
     CompanyController,
     HwpxController,
     UnifiedGenerateController,
+    AttendanceReportController,
+    AttendanceRuleController,
   ],
   providers: [
     MappingService,
@@ -102,6 +113,18 @@ import {
     {
       provide: MAPPING_PROFILE_REPOSITORY_PORT,
       useClass: PrismaMappingProfileAdapter,
+    },
+    {
+      provide: FILE_STORAGE_PORT,
+      useClass: SupabaseStorageAdapter,
+    },
+    AttendanceMappingService,
+    AttendanceCalculationService,
+    AttendanceReportGraphService,
+    PrismaAttendanceRuleAdapter,
+    {
+      provide: ATTENDANCE_RULE_REPOSITORY_PORT,
+      useClass: PrismaAttendanceRuleAdapter,
     },
   ],
   exports: [

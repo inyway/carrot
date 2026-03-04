@@ -7,3 +7,5 @@ export * from '../mapping-profile.controller';
 export * from '../company.controller';
 export * from './hwpx.controller';
 export * from './unified-generate.controller';
+export * from './attendance-report.controller';
+export * from './attendance-rule.controller';

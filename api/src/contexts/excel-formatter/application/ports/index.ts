@@ -6,3 +6,5 @@ export * from './report-generator.port';
 export * from './embedding.port';
 export * from './clean-report-repository.port';
 export * from './mapping-profile-repository.port';
+export * from './file-storage.port';
+export * from './attendance-rule-repository.port';

@@ -5,3 +5,5 @@ export * from './openai-embedding.adapter';
 export * from './prisma-clean-report.adapter';
 export * from './prisma-mapping-profile.adapter';
 export * from './hwpx-parser.adapter';
+export * from './supabase-storage.adapter';
+export * from './prisma-attendance-rule.adapter';

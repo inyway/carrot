@@ -34,3 +34,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# stale subdirectory copy (root is the actual project)
+excel-report-formatter/
