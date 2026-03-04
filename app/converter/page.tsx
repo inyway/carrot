@@ -190,6 +190,7 @@ export default function ConverterPage() {
   const [dataFile, setDataFile] = useState<FileInfo | null>(null);
   const [mappings, setMappingsState] = useState<MappingItem[]>([]);
   const [isAttendanceReport, setIsAttendanceReport] = useState(false);
+  const isAttendanceReportRef = useRef(false);
 
   // mappings 상태와 ref를 동시에 업데이트하는 래퍼 함수
   const setMappings = (newMappings: MappingItem[] | ((prev: MappingItem[]) => MappingItem[])) => {
@@ -639,7 +640,11 @@ export default function ConverterPage() {
 
             if (aiResult.isAttendanceReport) {
               setIsAttendanceReport(true);
+              isAttendanceReportRef.current = true;
               console.log('[Converter] Attendance report detected — will use attendance pipeline');
+            } else {
+              setIsAttendanceReport(false);
+              isAttendanceReportRef.current = false;
             }
 
             const newMappings: MappingItem[] = (aiResult.mappings || []).map(
@@ -878,7 +883,8 @@ export default function ConverterPage() {
       }
 
       // 출결 보고서면 attendance 파이프라인 사용, 아니면 통합 생성기
-      const generateEndpoint = isAttendanceReport
+      const useAttendance = isAttendanceReportRef.current || isAttendanceReport;
+      const generateEndpoint = useAttendance
         ? '/api/converter/attendance-generate'
         : '/api/converter/generate';
       console.log(`[Converter] Sending request to ${generateEndpoint}...`, { isAttendanceReport });
