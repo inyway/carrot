@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_BASE_URL = process.env.NESTJS_API_URL || 'http://localhost:4000/api';
+const API_BASE_URL = process.env.NEST_API_URL || 'http://localhost:4000';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const targetUrl = `${API_BASE_URL}/generate`;
+    const targetUrl = `${API_BASE_URL}/api/generate`;
     console.log('[converter/generate] Forwarding to:', targetUrl);
 
     // Forward multipart form data to NestJS backend
