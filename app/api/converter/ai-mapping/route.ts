@@ -696,6 +696,12 @@ function fallbackRuleMapping(
   const results: MappingResult[] = [];
   const usedDataColumns = new Set<string>();
 
+  // Pre-compute stripped versions for composite prefix matching (e.g. "class 정보_Class Name" → "Class Name")
+  const strippedDataMap = new Map<string, string>();
+  for (const dc of dataColumns) {
+    strippedDataMap.set(dc, stripCompositePrefix(dc).toLowerCase());
+  }
+
   for (const templateCol of templateColumns) {
     const templateNorm = normalizeColName(templateCol).toLowerCase();
 
@@ -714,11 +720,67 @@ function fallbackRuleMapping(
       continue;
     }
 
-    // 2. Partial match (with normalization)
+    // 2. Exact match after stripping composite prefix
+    const strippedExact = dataColumns.find(
+      dc => !usedDataColumns.has(dc) && strippedDataMap.get(dc) === templateNorm
+    );
+    if (strippedExact) {
+      results.push({
+        templateField: templateCol,
+        dataColumn: strippedExact,
+        confidence: 0.95,
+        reason: '접두사 제거 후 일치',
+      });
+      usedDataColumns.add(strippedExact);
+      continue;
+    }
+
+    // 3. METADATA_FIELD_MAP match (한국어↔영어 필드 매핑)
+    let metadataMatch: string | null = null;
+    for (const [, aliases] of Object.entries(METADATA_FIELD_MAP)) {
+      const aliasesLower = aliases.map(a => a.toLowerCase());
+      if (aliasesLower.includes(templateNorm)) {
+        // Template matches an alias → find data column matching any other alias
+        metadataMatch = dataColumns.find(dc => {
+          if (usedDataColumns.has(dc)) return false;
+          const dcStripped = strippedDataMap.get(dc) || '';
+          const dcNorm = normalizeColName(dc).toLowerCase();
+          return aliasesLower.includes(dcNorm) || aliasesLower.includes(dcStripped);
+        }) || null;
+        if (metadataMatch) break;
+      }
+    }
+    // Also check if template matches a METADATA_FIELD_MAP key
+    if (!metadataMatch) {
+      const mapEntry = METADATA_FIELD_MAP[templateCol] || METADATA_FIELD_MAP[normalizeColName(templateCol)];
+      if (mapEntry) {
+        const aliasesLower = mapEntry.map(a => a.toLowerCase());
+        metadataMatch = dataColumns.find(dc => {
+          if (usedDataColumns.has(dc)) return false;
+          const dcStripped = strippedDataMap.get(dc) || '';
+          const dcNorm = normalizeColName(dc).toLowerCase();
+          return aliasesLower.includes(dcNorm) || aliasesLower.includes(dcStripped);
+        }) || null;
+      }
+    }
+    if (metadataMatch) {
+      results.push({
+        templateField: templateCol,
+        dataColumn: metadataMatch,
+        confidence: 0.9,
+        reason: '필드맵 매칭',
+      });
+      usedDataColumns.add(metadataMatch);
+      continue;
+    }
+
+    // 4. Partial match (with normalization + stripped prefix)
     const partialMatch = dataColumns.find(
       dc => !usedDataColumns.has(dc) && (
         normalizeColName(dc).toLowerCase().includes(templateNorm) ||
-        templateNorm.includes(normalizeColName(dc).toLowerCase())
+        templateNorm.includes(normalizeColName(dc).toLowerCase()) ||
+        (strippedDataMap.get(dc) || '').includes(templateNorm) ||
+        templateNorm.includes(strippedDataMap.get(dc) || '\x00')
       )
     );
     if (partialMatch) {
@@ -732,7 +794,7 @@ function fallbackRuleMapping(
       continue;
     }
 
-    // 3. Synonym match
+    // 5. Synonym match
     const synonymMatch = findSynonymMatch(
       templateCol,
       dataColumns.filter(dc => !usedDataColumns.has(dc))
@@ -747,19 +809,40 @@ function fallbackRuleMapping(
       usedDataColumns.add(synonymMatch.dataColumn);
       continue;
     }
+
+    // 6. Synonym match with stripped prefix
+    const strippedSynonymMatch = findSynonymMatch(
+      templateCol,
+      dataColumns.filter(dc => !usedDataColumns.has(dc)).map(dc => stripCompositePrefix(dc))
+    );
+    if (strippedSynonymMatch) {
+      // Find original data column
+      const origDc = dataColumns.find(dc =>
+        !usedDataColumns.has(dc) && stripCompositePrefix(dc) === strippedSynonymMatch.dataColumn
+      );
+      if (origDc) {
+        results.push({
+          templateField: templateCol,
+          dataColumn: origDc,
+          confidence: strippedSynonymMatch.confidence * 0.9,
+          reason: `접두사 제거 + ${strippedSynonymMatch.reason}`,
+        });
+        usedDataColumns.add(origDc);
+        continue;
+      }
+    }
   }
 
   return results;
 }
 
-// Gemini API AI mapping (preserved from original)
-async function aiMapping(
-  apiKey: string,
+// --- Build mapping prompt (shared by Gemini and OpenAI) ---
+function buildMappingPrompt(
   templateColumns: string[],
   dataColumns: string[],
   templateSampleData?: Record<string, unknown>[],
   dataSampleData?: Record<string, unknown>[]
-): Promise<MappingResult[]> {
+): string {
   const templateSampleStr = templateSampleData && templateSampleData.length > 0
     ? '\n\n템플릿 샘플 데이터 (첫 2행):\n' + templateSampleData.slice(0, 2).map(
         (row, i) => `행 ${i + 1}: ${Object.entries(row).map(([k, v]) => `${k}="${v}"`).join(', ')}`
@@ -772,7 +855,7 @@ async function aiMapping(
       ).join('\n')
     : '';
 
-  const prompt = `당신은 엑셀 데이터 매핑 전문가입니다.
+  return `당신은 엑셀 데이터 매핑 전문가입니다.
 두 개의 컬럼 목록을 의미론적으로 매칭해야 합니다.
 
 ## 템플릿 컬럼 (보고서 양식의 필드):
@@ -799,53 +882,129 @@ ${dataSampleStr}
 ]
 
 매칭 가능한 모든 쌍을 찾아 JSON 배열로 응답하세요. JSON 외의 텍스트는 출력하지 마세요.`;
+}
 
+// --- Parse and filter AI mapping response ---
+function parseAiMappingResponse(
+  text: string,
+  templateColumns: string[],
+  dataColumns: string[],
+  provider: string,
+): MappingResult[] {
+  const jsonMatch = text.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) {
+    throw new Error(`Failed to parse ${provider} response as JSON array`);
+  }
+
+  const parsed: MappingResult[] = JSON.parse(jsonMatch[0]);
+  console.log(`[ai-mapping] ${provider} returned ${parsed.length} raw mappings`);
+
+  const templateSet = new Set(templateColumns);
+  const dataSet = new Set(dataColumns);
+
+  const templateNormMap = new Map<string, string>();
+  for (const t of templateColumns) templateNormMap.set(normalizeColName(t).toLowerCase().trim(), t);
+  const dataNormMap = new Map<string, string>();
+  for (const d of dataColumns) dataNormMap.set(normalizeColName(d).toLowerCase().trim(), d);
+
+  const filtered = parsed
+    .map(m => {
+      let tField = templateSet.has(m.templateField) ? m.templateField : null;
+      let dCol = dataSet.has(m.dataColumn) ? m.dataColumn : null;
+      if (!tField) tField = templateNormMap.get(normalizeColName(m.templateField).toLowerCase().trim()) || null;
+      if (!dCol) dCol = dataNormMap.get(normalizeColName(m.dataColumn).toLowerCase().trim()) || null;
+      if (tField && dCol) return { ...m, templateField: tField, dataColumn: dCol };
+      return null;
+    })
+    .filter((m): m is MappingResult => m !== null);
+
+  if (filtered.length < parsed.length) {
+    console.warn(`[ai-mapping] ${provider}: Dropped ${parsed.length - filtered.length}/${parsed.length} mappings due to name mismatch`);
+  }
+
+  return filtered;
+}
+
+// --- Gemini API call ---
+async function callGemini(
+  apiKey: string,
+  prompt: string,
+): Promise<string> {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 4096,
-        },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, topK: 40, topP: 0.95, maxOutputTokens: 4096 },
       }),
     }
   );
-
-  if (!response.ok) {
-    throw new Error(`Gemini API error: ${response.status}`);
-  }
-
+  if (!response.ok) throw new Error(`Gemini API error: ${response.status} ${await response.text().catch(() => '')}`);
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Gemini returned empty response');
+  return text;
+}
 
-  if (!text) {
-    throw new Error('Gemini API returned empty response');
+// --- OpenAI API call ---
+async function callOpenAI(
+  apiKey: string,
+  prompt: string,
+): Promise<string> {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+      max_tokens: 4096,
+    }),
+  });
+  if (!response.ok) throw new Error(`OpenAI API error: ${response.status} ${await response.text().catch(() => '')}`);
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error('OpenAI returned empty response');
+  return text;
+}
+
+// --- AI mapping with Gemini → OpenAI fallback ---
+async function aiMapping(
+  apiKey: string,
+  templateColumns: string[],
+  dataColumns: string[],
+  templateSampleData?: Record<string, unknown>[],
+  dataSampleData?: Record<string, unknown>[]
+): Promise<MappingResult[]> {
+  const prompt = buildMappingPrompt(templateColumns, dataColumns, templateSampleData, dataSampleData);
+
+  // Try Gemini first
+  try {
+    console.log('[ai-mapping] Trying Gemini...');
+    const text = await callGemini(apiKey, prompt);
+    return parseAiMappingResponse(text, templateColumns, dataColumns, 'Gemini');
+  } catch (geminiError) {
+    console.error('[ai-mapping] Gemini failed:', geminiError);
   }
 
-  const jsonMatch = text.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
-    throw new Error('Failed to parse Gemini response as JSON array');
+  // Fallback to OpenAI
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (openaiKey) {
+    try {
+      console.log('[ai-mapping] Falling back to OpenAI...');
+      const text = await callOpenAI(openaiKey, prompt);
+      return parseAiMappingResponse(text, templateColumns, dataColumns, 'OpenAI');
+    } catch (openaiError) {
+      console.error('[ai-mapping] OpenAI also failed:', openaiError);
+    }
   }
 
-  const parsed: MappingResult[] = JSON.parse(jsonMatch[0]);
-
-  const templateSet = new Set(templateColumns);
-  const dataSet = new Set(dataColumns);
-
-  return parsed.filter(
-    m => templateSet.has(m.templateField) && dataSet.has(m.dataColumn)
-  );
+  throw new Error('All AI providers failed (Gemini + OpenAI)');
 }
 
 // --- Detect if this is an attendance report scenario ---
@@ -909,9 +1068,12 @@ export async function POST(request: NextRequest) {
     } else {
       // Non-attendance: use original flow (Gemini + fallback)
       const geminiApiKey = process.env.GEMINI_API_KEY;
+      console.log(`[ai-mapping] Non-attendance mode. GEMINI_API_KEY: ${geminiApiKey ? 'SET' : 'NOT SET'}`);
+      console.log(`[ai-mapping] isAttendanceReport: false. Template attendance cols: ${templateColumns.filter(isAttendanceColumn).length}, Data attendance cols: ${dataColumns.filter(isAttendanceColumn).length}`);
 
       if (geminiApiKey) {
         try {
+          console.log(`[ai-mapping] Calling Gemini with ${templateColumns.length} template cols, ${dataColumns.length} data cols`);
           mappings = await aiMapping(
             geminiApiKey,
             templateColumns,
@@ -919,6 +1081,7 @@ export async function POST(request: NextRequest) {
             templateSampleData,
             dataSampleData
           );
+          console.log(`[ai-mapping] Gemini success: ${mappings.length} mappings`);
 
           // Supplement with rule-based for unmapped columns
           const aiMappedTemplates = new Set(mappings.map(m => m.templateField));
@@ -931,11 +1094,14 @@ export async function POST(request: NextRequest) {
             mappings = [...mappings, ...supplementary];
           }
         } catch (error) {
-          console.error('AI mapping failed, falling back to rules:', error);
+          console.error('[ai-mapping] Gemini FAILED:', error);
           mappings = fallbackRuleMapping(templateColumns, dataColumns);
+          console.log(`[ai-mapping] Fallback rule mapping: ${mappings.length} mappings`);
         }
       } else {
+        console.warn('[ai-mapping] No GEMINI_API_KEY, using fallback only');
         mappings = fallbackRuleMapping(templateColumns, dataColumns);
+        console.log(`[ai-mapping] Fallback rule mapping: ${mappings.length} mappings`);
       }
     }
 
