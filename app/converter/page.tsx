@@ -308,14 +308,16 @@ export default function ConverterPage() {
 
         if (res.ok) {
           const result = await res.json();
-          setTemplateFile(prev => prev ? {
-            ...prev,
+          const updatedTemplateFile: TemplateInfo = {
+            ...fileInfo,
             columns: result.columns,
             sheets: result.sheets,
             selectedSheet: result.sheets?.[0],
             placeholders: result.columns, // Excel 템플릿의 컬럼이 곧 필드
             templatePreview: result.preview, // 템플릿 미리보기 데이터 저장
-          } : null);
+          };
+          setTemplateFile(updatedTemplateFile);
+          templateFileRef.current = updatedTemplateFile; // ref도 업데이트
         }
       }
     } catch (error) {
@@ -422,11 +424,15 @@ export default function ConverterPage() {
       if (res.ok) {
         const result = await res.json();
         if (type === 'template') {
-          setTemplateFile(prev => prev ? {
-            ...prev,
-            columns: result.columns,
-            placeholders: result.columns,
-          } : null);
+          setTemplateFile(prev => {
+            const updated = prev ? {
+              ...prev,
+              columns: result.columns,
+              placeholders: result.columns,
+            } : null;
+            if (updated) templateFileRef.current = updated;
+            return updated;
+          });
         } else {
           setDataFile(prev => prev ? {
             ...prev,
