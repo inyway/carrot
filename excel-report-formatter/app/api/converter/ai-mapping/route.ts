@@ -836,14 +836,13 @@ function fallbackRuleMapping(
   return results;
 }
 
-// Gemini API AI mapping (preserved from original)
-async function aiMapping(
-  apiKey: string,
+// --- Build mapping prompt (shared by Gemini and OpenAI) ---
+function buildMappingPrompt(
   templateColumns: string[],
   dataColumns: string[],
   templateSampleData?: Record<string, unknown>[],
   dataSampleData?: Record<string, unknown>[]
-): Promise<MappingResult[]> {
+): string {
   const templateSampleStr = templateSampleData && templateSampleData.length > 0
     ? '\n\n템플릿 샘플 데이터 (첫 2행):\n' + templateSampleData.slice(0, 2).map(
         (row, i) => `행 ${i + 1}: ${Object.entries(row).map(([k, v]) => `${k}="${v}"`).join(', ')}`
@@ -856,7 +855,7 @@ async function aiMapping(
       ).join('\n')
     : '';
 
-  const prompt = `당신은 엑셀 데이터 매핑 전문가입니다.
+  return `당신은 엑셀 데이터 매핑 전문가입니다.
 두 개의 컬럼 목록을 의미론적으로 매칭해야 합니다.
 
 ## 템플릿 컬럼 (보고서 양식의 필드):
@@ -883,52 +882,26 @@ ${dataSampleStr}
 ]
 
 매칭 가능한 모든 쌍을 찾아 JSON 배열로 응답하세요. JSON 외의 텍스트는 출력하지 마세요.`;
+}
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 4096,
-        },
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(`Gemini API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!text) {
-    throw new Error('Gemini API returned empty response');
-  }
-
+// --- Parse and filter AI mapping response ---
+function parseAiMappingResponse(
+  text: string,
+  templateColumns: string[],
+  dataColumns: string[],
+  provider: string,
+): MappingResult[] {
   const jsonMatch = text.match(/\[[\s\S]*\]/);
   if (!jsonMatch) {
-    throw new Error('Failed to parse Gemini response as JSON array');
+    throw new Error(`Failed to parse ${provider} response as JSON array`);
   }
 
   const parsed: MappingResult[] = JSON.parse(jsonMatch[0]);
-  console.log(`[ai-mapping] Gemini returned ${parsed.length} raw mappings`);
+  console.log(`[ai-mapping] ${provider} returned ${parsed.length} raw mappings`);
 
   const templateSet = new Set(templateColumns);
   const dataSet = new Set(dataColumns);
 
-  // Build normalized lookup maps for fuzzy matching
   const templateNormMap = new Map<string, string>();
   for (const t of templateColumns) templateNormMap.set(normalizeColName(t).toLowerCase().trim(), t);
   const dataNormMap = new Map<string, string>();
@@ -936,26 +909,102 @@ ${dataSampleStr}
 
   const filtered = parsed
     .map(m => {
-      // Try exact match first
       let tField = templateSet.has(m.templateField) ? m.templateField : null;
       let dCol = dataSet.has(m.dataColumn) ? m.dataColumn : null;
-
-      // Fuzzy: normalized match
       if (!tField) tField = templateNormMap.get(normalizeColName(m.templateField).toLowerCase().trim()) || null;
       if (!dCol) dCol = dataNormMap.get(normalizeColName(m.dataColumn).toLowerCase().trim()) || null;
-
-      if (tField && dCol) {
-        return { ...m, templateField: tField, dataColumn: dCol };
-      }
+      if (tField && dCol) return { ...m, templateField: tField, dataColumn: dCol };
       return null;
     })
     .filter((m): m is MappingResult => m !== null);
 
   if (filtered.length < parsed.length) {
-    console.warn(`[ai-mapping] Dropped ${parsed.length - filtered.length}/${parsed.length} mappings due to name mismatch`);
+    console.warn(`[ai-mapping] ${provider}: Dropped ${parsed.length - filtered.length}/${parsed.length} mappings due to name mismatch`);
   }
 
   return filtered;
+}
+
+// --- Gemini API call ---
+async function callGemini(
+  apiKey: string,
+  prompt: string,
+): Promise<string> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, topK: 40, topP: 0.95, maxOutputTokens: 4096 },
+      }),
+    }
+  );
+  if (!response.ok) throw new Error(`Gemini API error: ${response.status} ${await response.text().catch(() => '')}`);
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Gemini returned empty response');
+  return text;
+}
+
+// --- OpenAI API call ---
+async function callOpenAI(
+  apiKey: string,
+  prompt: string,
+): Promise<string> {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+      max_tokens: 4096,
+    }),
+  });
+  if (!response.ok) throw new Error(`OpenAI API error: ${response.status} ${await response.text().catch(() => '')}`);
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error('OpenAI returned empty response');
+  return text;
+}
+
+// --- AI mapping with Gemini → OpenAI fallback ---
+async function aiMapping(
+  apiKey: string,
+  templateColumns: string[],
+  dataColumns: string[],
+  templateSampleData?: Record<string, unknown>[],
+  dataSampleData?: Record<string, unknown>[]
+): Promise<MappingResult[]> {
+  const prompt = buildMappingPrompt(templateColumns, dataColumns, templateSampleData, dataSampleData);
+
+  // Try Gemini first
+  try {
+    console.log('[ai-mapping] Trying Gemini...');
+    const text = await callGemini(apiKey, prompt);
+    return parseAiMappingResponse(text, templateColumns, dataColumns, 'Gemini');
+  } catch (geminiError) {
+    console.error('[ai-mapping] Gemini failed:', geminiError);
+  }
+
+  // Fallback to OpenAI
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (openaiKey) {
+    try {
+      console.log('[ai-mapping] Falling back to OpenAI...');
+      const text = await callOpenAI(openaiKey, prompt);
+      return parseAiMappingResponse(text, templateColumns, dataColumns, 'OpenAI');
+    } catch (openaiError) {
+      console.error('[ai-mapping] OpenAI also failed:', openaiError);
+    }
+  }
+
+  throw new Error('All AI providers failed (Gemini + OpenAI)');
 }
 
 // --- Detect if this is an attendance report scenario ---
