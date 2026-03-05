@@ -26,21 +26,27 @@ export class AttendanceCalculationService {
    * 회사별 출결 규칙 로드
    */
   async loadRule(companyId: string): Promise<AttendanceRule | null> {
-    const rules = await this.ruleRepo.findByCompanyId(companyId);
-    if (rules.length === 0) return null;
-    // 기본 규칙 우선, 없으면 첫 번째
-    const defaultRule = rules.find(r => r.name === 'default');
-    const rule = defaultRule || rules[0];
-    return {
-      id: rule.id,
-      companyId: rule.companyId,
-      name: rule.name,
-      attendedSymbols: rule.attendedSymbols,
-      excusedSymbols: rule.excusedSymbols,
-      absentSymbols: rule.absentSymbols,
-      includeExcusedInAttendance: rule.includeExcusedInAttendance,
-      totalSessionsField: rule.totalSessionsField,
-    };
+    try {
+      const rules = await this.ruleRepo.findByCompanyId(companyId);
+      if (rules.length === 0) return null;
+      // 기본 규칙 우선, 없으면 첫 번째
+      const defaultRule = rules.find(r => r.name === 'default');
+      const rule = defaultRule || rules[0];
+      return {
+        id: rule.id,
+        companyId: rule.companyId,
+        name: rule.name,
+        attendedSymbols: rule.attendedSymbols,
+        excusedSymbols: rule.excusedSymbols,
+        absentSymbols: rule.absentSymbols,
+        includeExcusedInAttendance: rule.includeExcusedInAttendance,
+        totalSessionsField: rule.totalSessionsField,
+      };
+    } catch (error) {
+      // DB 테이블이 없거나 조회 실패 시 기본 룰 사용
+      console.warn('[AttendanceCalc] Failed to load rule, using defaults:', error instanceof Error ? error.message : error);
+      return null;
+    }
   }
 
   /**
