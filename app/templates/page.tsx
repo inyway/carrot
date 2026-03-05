@@ -23,6 +23,9 @@ interface Template {
     name: string;
     slug: string;
   };
+  formatType?: string;
+  sheetCount?: number;
+  sheetNames?: string[];
 }
 
 interface CleanReport {
@@ -36,11 +39,30 @@ interface CleanReport {
   createdAt: string;
 }
 
+interface SheetStructureInfo {
+  name: string;
+  index: number;
+  rowCount: number;
+  colCount: number;
+  headerRows: number[];
+  dataStartRow: number;
+  columnCount: number;
+  mergedCellCount: number;
+  formulaCount: number;
+  titleRows?: number[];
+}
+
 interface ExcelPreviewData {
   sheetName: string;
   headers: string[];
   rows: (string | number)[][];
-  formulas?: { cell: string; formula: string }[];
+  formulas?: { cell: string; formula: string; type?: string }[];
+}
+
+interface TemplateDetail extends Template {
+  preview: ExcelPreviewData | null;
+  sheets?: SheetStructureInfo[];
+  fileUrl?: string | null;
 }
 
 export default function TemplatesPage() {
@@ -73,6 +95,9 @@ export default function TemplatesPage() {
   const [excelPreview, setExcelPreview] = useState<ExcelPreviewData | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
+  // 템플릿 상세 구조 상태
+  const [templateDetail, setTemplateDetail] = useState<TemplateDetail | null>(null);
+
   // 에러 상태
   const [companiesError, setCompaniesError] = useState<string | null>(null);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
@@ -84,6 +109,7 @@ export default function TemplatesPage() {
     learning: true,
     columns: false,
     excel: true,
+    sheets: true,
   });
 
   const toggleSection = (section: string) => {
@@ -165,12 +191,15 @@ export default function TemplatesPage() {
     try {
       const res = await fetch(`/api/templates/${templateId}`);
       const response = await res.json();
-      if (response.success && response.data?.preview) {
-        setExcelPreview(response.data.preview);
+      if (response.success && response.data) {
+        setTemplateDetail(response.data);
+        setExcelPreview(response.data.preview ?? null);
       } else {
+        setTemplateDetail(null);
         setExcelPreview(null);
       }
     } catch {
+      setTemplateDetail(null);
       setExcelPreview(null);
     } finally {
       setLoadingPreview(false);
@@ -211,6 +240,7 @@ export default function TemplatesPage() {
       fetchCleanReports(selectedTemplate.id);
     } else {
       setExcelPreview(null);
+      setTemplateDetail(null);
       setCleanReports([]);
     }
   }, [selectedTemplate]);
@@ -574,8 +604,22 @@ export default function TemplatesPage() {
                                 <div>
                                   <p className="font-medium text-gray-900">{template.name}</p>
                                   <p className="text-sm text-gray-500">
-                                    {template.columns.length}개 컬럼 • {new Date(template.createdAt).toLocaleDateString('ko-KR')}
+                                    {template.columns.length}개 컬럼
+                                    {template.sheetCount && template.sheetCount > 1 ? ` • ${template.sheetCount}개 시트` : ''}
+                                    {' • '}{new Date(template.createdAt).toLocaleDateString('ko-KR')}
                                   </p>
+                                  {template.formatType && (
+                                    <span className={`inline-block mt-1 text-xs px-1.5 py-0.5 rounded ${
+                                      template.formatType === 'multi_sheet' ? 'bg-purple-100 text-purple-700' :
+                                      template.formatType === 'multi_header' ? 'bg-blue-100 text-blue-700' :
+                                      'bg-gray-100 text-gray-600'
+                                    }`}>
+                                      {template.formatType === 'flat' ? 'Flat' :
+                                       template.formatType === 'multi_header' ? 'Multi-Header' :
+                                       template.formatType === 'multi_sheet' ? 'Multi-Sheet' :
+                                       template.formatType}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                               <button
@@ -619,7 +663,7 @@ export default function TemplatesPage() {
                       <div className="flex-1">
                         <h3 className="text-lg font-semibold text-gray-900">{selectedTemplate.name}</h3>
                         <p className="text-sm text-gray-500 mt-1">{selectedTemplate.fileName}</p>
-                        <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                        <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 flex-wrap">
                           <span className="flex items-center gap-1">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
@@ -628,8 +672,23 @@ export default function TemplatesPage() {
                           </span>
                           <span>•</span>
                           <span>{selectedTemplate.columns.length}개 컬럼</span>
+                          {selectedTemplate.sheetCount && selectedTemplate.sheetCount > 1 && (
+                            <><span>•</span><span>{selectedTemplate.sheetCount}개 시트</span></>
+                          )}
                           <span>•</span>
                           <span>{new Date(selectedTemplate.createdAt).toLocaleDateString('ko-KR')}</span>
+                          {selectedTemplate.formatType && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                              selectedTemplate.formatType === 'multi_sheet' ? 'bg-purple-100 text-purple-700' :
+                              selectedTemplate.formatType === 'multi_header' ? 'bg-blue-100 text-blue-700' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>
+                              {selectedTemplate.formatType === 'flat' ? 'Flat' :
+                               selectedTemplate.formatType === 'multi_header' ? 'Multi-Header' :
+                               selectedTemplate.formatType === 'multi_sheet' ? 'Multi-Sheet' :
+                               selectedTemplate.formatType}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <button
@@ -642,6 +701,75 @@ export default function TemplatesPage() {
 
                     {/* 아코디언 섹션들 */}
                     <div className="space-y-3">
+                      {/* 시트 구조 아코디언 (Phase 1) */}
+                      {templateDetail?.sheets && templateDetail.sheets.length > 0 && (
+                        <div className="border border-indigo-200 rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => toggleSection('sheets')}
+                            className="w-full px-4 py-3 bg-indigo-50 flex items-center justify-between hover:bg-indigo-100 transition-all"
+                          >
+                            <div className="flex items-center gap-2">
+                              <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                              </svg>
+                              <span className="font-medium text-indigo-800">시트 구조</span>
+                              <span className="text-xs text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded">
+                                {templateDetail.sheets.length}개 시트
+                              </span>
+                            </div>
+                            <svg className={`w-5 h-5 text-indigo-600 transition-transform ${expandedSections.sheets ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          {expandedSections.sheets && (
+                            <div className="p-4 bg-white space-y-3">
+                              {templateDetail.sheets.map((sheet) => (
+                                <div key={sheet.index} className="p-3 bg-indigo-50/50 rounded-lg">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="font-medium text-gray-800 text-sm">{sheet.name}</span>
+                                    <div className="flex gap-2">
+                                      {sheet.mergedCellCount > 0 && (
+                                        <span className="text-xs px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded">
+                                          merged: {sheet.mergedCellCount}
+                                        </span>
+                                      )}
+                                      {sheet.formulaCount > 0 && (
+                                        <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">
+                                          수식: {sheet.formulaCount}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-2 text-xs text-gray-600">
+                                    <div>
+                                      <span className="text-gray-400">행:</span> {sheet.rowCount}
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400">열:</span> {sheet.colCount}
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400">컬럼:</span> {sheet.columnCount}
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400">헤더 행:</span>{' '}
+                                      {sheet.headerRows.length > 0 ? sheet.headerRows.join(', ') : '-'}
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400">데이터 시작:</span> {sheet.dataStartRow}행
+                                    </div>
+                                    {sheet.titleRows && sheet.titleRows.length > 0 && (
+                                      <div>
+                                        <span className="text-gray-400">타이틀:</span> {sheet.titleRows.join(', ')}행
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Excel 구조 미리보기 아코디언 */}
                       <div className="border border-green-200 rounded-lg overflow-hidden">
                         <button
@@ -724,15 +852,27 @@ export default function TemplatesPage() {
                                 {/* 수식 정보 */}
                                 {excelPreview.formulas && excelPreview.formulas.length > 0 && (
                                   <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-                                    <p className="text-xs font-medium text-blue-700 mb-2">수식</p>
+                                    <p className="text-xs font-medium text-blue-700 mb-2">
+                                      수식 ({excelPreview.formulas.length}개)
+                                    </p>
                                     <div className="flex flex-wrap gap-2">
-                                      {excelPreview.formulas.map((f, idx) => (
-                                        <span key={idx} className="text-xs bg-white px-2 py-1 rounded border border-blue-200">
+                                      {excelPreview.formulas.slice(0, 20).map((f, idx) => (
+                                        <span key={idx} className="text-xs bg-white px-2 py-1 rounded border border-blue-200 flex items-center gap-1">
                                           <span className="text-blue-600 font-mono">{f.cell}</span>
-                                          <span className="text-gray-400 mx-1">=</span>
-                                          <span className="text-blue-800 font-mono">{f.formula}</span>
+                                          <span className="text-gray-400">=</span>
+                                          <span className="text-blue-800 font-mono max-w-[200px] truncate">{f.formula}</span>
+                                          {f.type && f.type !== 'standard' && (
+                                            <span className="text-[10px] px-1 py-0.5 bg-blue-100 text-blue-600 rounded">
+                                              {f.type}
+                                            </span>
+                                          )}
                                         </span>
                                       ))}
+                                      {excelPreview.formulas.length > 20 && (
+                                        <span className="text-xs text-blue-500">
+                                          +{excelPreview.formulas.length - 20}개 더
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                 )}
@@ -857,16 +997,28 @@ export default function TemplatesPage() {
                         {expandedSections.columns && (
                           <div className="p-4 bg-white">
                             {selectedTemplate.columns.length > 0 ? (
-                              <div className="grid grid-cols-3 gap-2">
+                              <div className="grid grid-cols-2 gap-2">
                                 {selectedTemplate.columns.map((col, index) => (
                                   <div
                                     key={index}
                                     className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700 flex items-center gap-2"
                                   >
-                                    <span className="w-5 h-5 bg-gray-200 rounded text-xs flex items-center justify-center text-gray-500">
+                                    <span className="w-5 h-5 bg-gray-200 rounded text-xs flex items-center justify-center text-gray-500 flex-shrink-0">
                                       {index + 1}
                                     </span>
-                                    {col.name}
+                                    <span className="truncate flex-1">{col.name}</span>
+                                    {col.type && col.type !== 'string' && (
+                                      <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                        col.type === 'number' ? 'bg-blue-100 text-blue-700' :
+                                        col.type === 'percentage' ? 'bg-green-100 text-green-700' :
+                                        col.type === 'currency' ? 'bg-yellow-100 text-yellow-700' :
+                                        col.type === 'date' ? 'bg-purple-100 text-purple-700' :
+                                        col.type === 'formula' ? 'bg-orange-100 text-orange-700' :
+                                        'bg-gray-100 text-gray-600'
+                                      }`}>
+                                        {col.type}
+                                      </span>
+                                    )}
                                   </div>
                                 ))}
                               </div>

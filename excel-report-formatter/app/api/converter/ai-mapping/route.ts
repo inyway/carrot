@@ -509,15 +509,21 @@ function attendanceAwareMapping(
       }
     } else {
       // Fallback: positional matching
-      const matchCount = Math.min(templateAttendanceCols.length, dataAttendanceCols.length);
+      // When merged pairs exist, use only (출결) columns (Y/N values, not dates)
+      const hasMergedPairs = dataAttendanceCols.some(c => /\((출결|일정)\)$/.test(c));
+      let positionalDataCols = dataAttendanceCols;
+      if (hasMergedPairs) {
+        positionalDataCols = dataAttendanceCols.filter(c => /\(출결\)$/.test(c));
+      }
+      const matchCount = Math.min(templateAttendanceCols.length, positionalDataCols.length);
       for (let i = 0; i < matchCount; i++) {
         results.push({
           templateField: templateAttendanceCols[i],
-          dataColumn: dataAttendanceCols[i],
+          dataColumn: positionalDataCols[i],
           confidence: 0.85,
           reason: `출결 날짜 위치 매칭 (${i + 1}번째)`,
         });
-        usedDataColumns.add(dataAttendanceCols[i]);
+        usedDataColumns.add(positionalDataCols[i]);
         mappedTemplateFields.add(templateAttendanceCols[i]);
       }
     }

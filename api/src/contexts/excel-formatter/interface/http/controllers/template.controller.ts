@@ -14,7 +14,14 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { TemplateService } from '../../../application/services';
-import type { TemplateSheetVO, TemplateBlockVO, CellInfo } from '../../../domain/value-objects';
+import type {
+  TemplateSheetVO,
+  TemplateBlockVO,
+  CellInfo,
+  TemplateStructureVO,
+  ColumnDefinition,
+  FormulaInfo,
+} from '../../../domain/value-objects';
 
 // 프론트엔드 호환 응답 형식
 interface ApiResponse<T = unknown> {
@@ -37,6 +44,10 @@ interface TemplateListResponse {
     name: string;
     slug: string;
   };
+  // Phase 1 enriched fields
+  formatType?: string;
+  sheetCount?: number;
+  sheetNames?: string[];
 }
 
 // Excel 미리보기 데이터
@@ -44,20 +55,46 @@ interface ExcelPreviewData {
   sheetName: string;
   headers: string[];
   rows: (string | number)[][];
-  formulas?: { cell: string; formula: string }[];
+  formulas?: { cell: string; formula: string; type?: string }[];
+}
+
+// 시트 구조 정보
+interface SheetStructureInfo {
+  name: string;
+  index: number;
+  rowCount: number;
+  colCount: number;
+  headerRows: number[];
+  dataStartRow: number;
+  columnCount: number;
+  mergedCellCount: number;
+  formulaCount: number;
+  titleRows?: number[];
 }
 
 // 템플릿 상세 응답
 interface TemplateDetailResponse extends TemplateListResponse {
   preview: ExcelPreviewData | null;
+  sheets?: SheetStructureInfo[];
+  fileUrl?: string | null;
 }
 
 // 분석 결과 응답
 interface AnalyzeTemplateResponse {
   sheetName: string;
-  headers: { column: number; letter: string; name: string }[];
+  headers: { column: number; letter: string; name: string; type: string }[];
   dataStartRow: number;
-  formulas: { cell: string; formula: string }[];
+  formulas: { cell: string; formula: string; type?: string }[];
+  // Phase 1 enriched fields
+  formatType?: string;
+  sheetCount?: number;
+  sheets?: {
+    name: string;
+    headerRows: number[];
+    dataStartRow: number;
+    columnCount: number;
+    mergedCellCount: number;
+  }[];
 }
 
 @Controller('templates')
@@ -71,18 +108,23 @@ export class TemplateController {
   @Get()
   async getTemplates(): Promise<ApiResponse<TemplateListResponse[]>> {
     try {
-      // 회사 정보 포함하여 조회
       const templates = await this.templateService.getAllTemplatesWithCompany();
 
-      const formattedTemplates: TemplateListResponse[] = templates.map((t) => ({
-        id: t.id,
-        name: t.name,
-        fileName: t.fileName,
-        columns: this.extractColumns(t.structure),
-        createdAt: t.createdAt.toISOString(),
-        companyId: t.companyId,
-        company: t.company,
-      }));
+      const formattedTemplates: TemplateListResponse[] = templates.map((t) => {
+        const s = t.structure as TemplateStructureVO | null;
+        return {
+          id: t.id,
+          name: t.name,
+          fileName: t.fileName,
+          columns: this.extractColumns(t.structure),
+          createdAt: t.createdAt.toISOString(),
+          companyId: t.companyId,
+          company: t.company,
+          formatType: s?.formatType,
+          sheetCount: s?.sheets?.length,
+          sheetNames: s?.sheets?.map((sh) => sh.name),
+        };
+      });
 
       return {
         success: true,
@@ -106,6 +148,7 @@ export class TemplateController {
   ): Promise<ApiResponse<TemplateDetailResponse>> {
     try {
       const template = await this.templateService.getTemplate(id);
+      const s = template.structure as TemplateStructureVO | null;
 
       const data: TemplateDetailResponse = {
         id: template.id,
@@ -116,6 +159,11 @@ export class TemplateController {
         companyId: template.companyId,
         company: template.company,
         preview: this.buildPreviewFromStructure(template.structure),
+        formatType: s?.formatType,
+        sheetCount: s?.sheets?.length,
+        sheetNames: s?.sheets?.map((sh) => sh.name),
+        sheets: s?.sheets?.map((sh) => this.buildSheetInfo(sh)),
+        fileUrl: template.fileUrl,
       };
 
       return {
@@ -216,17 +264,27 @@ export class TemplateController {
 
   /**
    * 템플릿 구조에서 컬럼 정보 추출
+   * Phase 1: header.columns의 inferredType 사용
    */
   private extractColumns(structure: unknown): { name: string; type: string }[] {
     if (!structure || typeof structure !== 'object') {
       return [];
     }
 
-    const s = structure as { sheets?: TemplateSheetVO[] };
-
-    // 첫 번째 시트의 헤더 블록에서 컬럼 추출
+    const s = structure as TemplateStructureVO;
     const firstSheet = s.sheets?.[0];
-    if (!firstSheet?.blocks) return [];
+    if (!firstSheet) return [];
+
+    // Phase 1: Use enriched header structure if available
+    if (firstSheet.header?.columns && firstSheet.header.columns.length > 0) {
+      return firstSheet.header.columns.map((col: ColumnDefinition) => ({
+        name: col.fullName,
+        type: col.inferredType,
+      }));
+    }
+
+    // Legacy fallback: extract from HEADER block
+    if (!firstSheet.blocks) return [];
 
     const headerBlock = firstSheet.blocks.find((b: TemplateBlockVO) => b.type === 'HEADER');
     if (!headerBlock?.cells) return [];
@@ -240,18 +298,78 @@ export class TemplateController {
   }
 
   /**
+   * 시트 구조 정보 생성
+   */
+  private buildSheetInfo(sheet: TemplateSheetVO): SheetStructureInfo {
+    return {
+      name: sheet.name,
+      index: sheet.index,
+      rowCount: sheet.rowCount,
+      colCount: sheet.colCount,
+      headerRows: sheet.header?.headerRows ?? [],
+      dataStartRow: sheet.header?.dataStartRow ?? 2,
+      columnCount: sheet.header?.columns?.length ?? 0,
+      mergedCellCount: sheet.mergedCells?.length ?? 0,
+      formulaCount: sheet.formulas?.length ?? 0,
+      titleRows: sheet.titleRows,
+    };
+  }
+
+  /**
    * 템플릿 구조에서 Excel 미리보기 데이터 생성
+   * Phase 1: header 구조 활용
    */
   private buildPreviewFromStructure(structure: unknown): ExcelPreviewData | null {
     if (!structure || typeof structure !== 'object') {
       return null;
     }
 
-    const s = structure as { sheets?: TemplateSheetVO[] };
+    const s = structure as TemplateStructureVO;
     const firstSheet = s.sheets?.[0];
-    if (!firstSheet?.blocks) return null;
+    if (!firstSheet) return null;
 
-    // 헤더 추출
+    // Phase 1: Use enriched header structure
+    if (firstSheet.header?.columns && firstSheet.header.columns.length > 0) {
+      const headers = firstSheet.header.columns.map((col: ColumnDefinition) => col.fullName);
+
+      // Build rows from sample values
+      const rows: (string | number)[][] = [];
+      const maxSamples = firstSheet.header.columns[0]?.sampleValues?.length ?? 0;
+
+      for (let i = 0; i < Math.min(maxSamples, 10); i++) {
+        const row: (string | number)[] = firstSheet.header.columns.map((col: ColumnDefinition) => {
+          const val = col.sampleValues?.[i];
+          if (val === null || val === undefined) return '';
+          if (typeof val === 'number') return val;
+          if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
+          return String(val);
+        });
+        rows.push(row);
+      }
+
+      // Extract formulas from sheet-level formula info
+      const formulas: { cell: string; formula: string; type?: string }[] = [];
+      if (firstSheet.formulas) {
+        for (const f of firstSheet.formulas) {
+          formulas.push({
+            cell: f.address,
+            formula: f.formula,
+            type: f.formulaType,
+          });
+        }
+      }
+
+      return {
+        sheetName: firstSheet.name,
+        headers,
+        rows,
+        formulas: formulas.length > 0 ? formulas : undefined,
+      };
+    }
+
+    // Legacy fallback: extract from blocks
+    if (!firstSheet.blocks) return null;
+
     const headerBlock = firstSheet.blocks.find((b: TemplateBlockVO) => b.type === 'HEADER');
     const headers = headerBlock?.cells
       ?.filter((c: CellInfo) => c.value !== null && c.value !== undefined)
@@ -259,7 +377,6 @@ export class TemplateController {
 
     if (headers.length === 0) return null;
 
-    // 데이터 행 추출 (TABLE / METRIC_BLOCK에서, 최대 10행)
     const rows: (string | number)[][] = [];
     const dataBlocks = firstSheet.blocks.filter(
       (b: TemplateBlockVO) => b.type === 'TABLE' || b.type === 'METRIC_BLOCK',
@@ -268,7 +385,6 @@ export class TemplateController {
     for (const block of dataBlocks) {
       if (!block.cells || rows.length >= 10) break;
 
-      // 셀을 행별로 그룹화
       const rowMap = new Map<number, (string | number)[]>();
       for (const cell of block.cells) {
         const rowNum = this.getRowFromAddress(cell.address);
@@ -282,7 +398,6 @@ export class TemplateController {
         );
       }
 
-      // 행 번호 순으로 정렬하여 추가
       const sortedRows = [...rowMap.entries()].sort((a, b) => a[0] - b[0]);
       for (const [, rowCells] of sortedRows) {
         if (rows.length >= 10) break;
@@ -290,7 +405,6 @@ export class TemplateController {
       }
     }
 
-    // 수식 추출
     const formulas: { cell: string; formula: string }[] = [];
     for (const block of firstSheet.blocks) {
       if (!block.cells) continue;
@@ -337,34 +451,62 @@ export class AnalyzeTemplateController {
         throw new BadRequestException('파일이 필요합니다.');
       }
 
-      // 파일 형식 확인
       const fileName = file.originalname.toLowerCase();
       if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
         throw new BadRequestException('Excel 파일(.xlsx, .xls)만 지원합니다.');
       }
 
-      // 템플릿 구조 파싱
       const structure = await this.templateService.parseExcelTemplate(
         file.buffer,
         file.originalname,
       );
 
-      // 프론트엔드 형식으로 변환
       const firstSheet = structure.sheets[0];
 
-      // 헤더 정보 추출
-      const headers = this.extractHeaders(firstSheet);
+      // Phase 1: Use enriched header structure
+      let headers: { column: number; letter: string; name: string; type: string }[];
+      let dataStartRow: number;
+      let formulas: { cell: string; formula: string; type?: string }[];
 
-      // 수식 정보 추출
-      const formulas = this.extractFormulas(firstSheet);
+      if (firstSheet?.header?.columns && firstSheet.header.columns.length > 0) {
+        headers = firstSheet.header.columns.map((col: ColumnDefinition) => ({
+          column: col.index,
+          letter: col.letter,
+          name: col.fullName,
+          type: col.inferredType,
+        }));
+        dataStartRow = firstSheet.header.dataStartRow;
+        formulas = (firstSheet.formulas ?? []).map((f: FormulaInfo) => ({
+          cell: f.address,
+          formula: f.formula,
+          type: f.formulaType,
+        }));
+      } else {
+        // Legacy fallback
+        headers = this.extractHeaders(firstSheet);
+        dataStartRow = this.findDataStartRow(firstSheet);
+        formulas = this.extractFormulas(firstSheet);
+      }
+
+      // Build per-sheet summaries
+      const sheets = structure.sheets.map((sh) => ({
+        name: sh.name,
+        headerRows: sh.header?.headerRows ?? [],
+        dataStartRow: sh.header?.dataStartRow ?? 2,
+        columnCount: sh.header?.columns?.length ?? 0,
+        mergedCellCount: sh.mergedCells?.length ?? 0,
+      }));
 
       return {
         success: true,
         data: {
           sheetName: firstSheet?.name || 'Sheet1',
           headers,
-          dataStartRow: this.findDataStartRow(firstSheet),
+          dataStartRow,
           formulas,
+          formatType: structure.formatType,
+          sheetCount: structure.sheets.length,
+          sheets,
         },
       };
     } catch (error) {
@@ -375,7 +517,9 @@ export class AnalyzeTemplateController {
     }
   }
 
-  private extractHeaders(sheet: TemplateSheetVO | undefined): { column: number; letter: string; name: string }[] {
+  // Legacy fallback methods
+
+  private extractHeaders(sheet: TemplateSheetVO | undefined): { column: number; letter: string; name: string; type: string }[] {
     if (!sheet?.blocks) return [];
 
     const headerBlock = sheet.blocks.find((b) => b.type === 'HEADER');
@@ -389,6 +533,7 @@ export class AnalyzeTemplateController {
           column: col,
           letter: this.columnToLetter(col),
           name: String(c.value),
+          type: 'string',
         };
       });
   }

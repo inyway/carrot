@@ -22,6 +22,7 @@ export enum MetricCategory {
   ENGAGEMENT = 'engagement',
   CONVERSION = 'conversion',
   TRAFFIC = 'traffic',
+  EDUCATION = 'education',
 }
 
 // ============================================
@@ -192,6 +193,64 @@ export const CANONICAL_METRICS: Record<string, CanonicalMetricDefinition> = {
     type: MetricType.COUNT,
     category: MetricCategory.TRAFFIC,
     format: '#,##0',
+  },
+
+  // Education / Attendance Metrics
+  attendance_count: {
+    key: 'attendance_count',
+    name: 'Attendance Count',
+    nameKo: '출석 횟수',
+    type: MetricType.COUNT,
+    category: MetricCategory.EDUCATION,
+    format: '#,##0',
+  },
+  absence_count: {
+    key: 'absence_count',
+    name: 'Absence Count',
+    nameKo: '결석 횟수',
+    type: MetricType.COUNT,
+    category: MetricCategory.EDUCATION,
+    format: '#,##0',
+  },
+  attendance_rate: {
+    key: 'attendance_rate',
+    name: 'Attendance Rate',
+    nameKo: '출석률',
+    type: MetricType.PERCENTAGE,
+    category: MetricCategory.EDUCATION,
+    format: '0.0%',
+  },
+  class_days: {
+    key: 'class_days',
+    name: 'Class Days',
+    nameKo: '수업 일수',
+    type: MetricType.COUNT,
+    category: MetricCategory.EDUCATION,
+    format: '#,##0',
+  },
+  education_cost: {
+    key: 'education_cost',
+    name: 'Education Cost',
+    nameKo: '교육비',
+    type: MetricType.CURRENCY,
+    category: MetricCategory.EDUCATION,
+    format: '₩#,##0',
+  },
+  cancel_count: {
+    key: 'cancel_count',
+    name: 'Cancel Count',
+    nameKo: '당일캔슬',
+    type: MetricType.COUNT,
+    category: MetricCategory.EDUCATION,
+    format: '#,##0',
+  },
+  class_hours: {
+    key: 'class_hours',
+    name: 'Class Hours',
+    nameKo: '수업 시간',
+    type: MetricType.NUMBER,
+    category: MetricCategory.EDUCATION,
+    format: '#,##0.0',
   },
 };
 

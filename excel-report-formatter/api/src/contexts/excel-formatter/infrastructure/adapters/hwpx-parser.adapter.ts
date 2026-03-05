@@ -332,6 +332,7 @@ export class HwpxParserAdapter {
     fileNameColumn?: string,
   ): Promise<Buffer> {
     const outputZip = new AdmZip();
+    const fileNameCounts = new Map<string, number>();
 
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i];
@@ -341,7 +342,10 @@ export class HwpxParserAdapter {
       let fileName = `output_${i + 1}.hwpx`;
       if (fileNameColumn && row[fileNameColumn]) {
         const safeName = row[fileNameColumn].replace(/[/\\?%*:|"<>]/g, '_');
-        fileName = `${safeName}.hwpx`;
+        // 동명이인 처리: 같은 이름이 이미 있으면 _2, _3 등 접미사 추가
+        const count = fileNameCounts.get(safeName) || 0;
+        fileNameCounts.set(safeName, count + 1);
+        fileName = count === 0 ? `${safeName}.hwpx` : `${safeName}_${count + 1}.hwpx`;
       }
 
       outputZip.addFile(fileName, hwpxBuffer);

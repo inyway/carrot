@@ -118,13 +118,16 @@ export class HwpxGeneratorService {
     }
 
     // Record<string, unknown>을 Record<string, string>으로 변환
-    const stringData = excelData.map((row) => {
+    let stringData = excelData.map((row) => {
       const stringRow: Record<string, string> = {};
       for (const [key, value] of Object.entries(row)) {
         stringRow[key] = this.convertToString(value);
       }
       return stringRow;
     });
+
+    // 이메일 컬럼 자동 감지 후 중복 제거
+    stringData = this.deduplicateByIdentity(stringData);
 
     // HWPX 일괄 생성
     return this.hwpxParser.generateBulk(
@@ -634,6 +637,73 @@ export class HwpxGeneratorService {
     }
 
     return data;
+  }
+
+  /**
+   * 이메일 컬럼을 자동 감지하여 동일인 중복 행 제거
+   * - 헤더에서 이메일 컬럼 찾기 (이메일, email, e-mail 등)
+   * - 없으면 값에 @ 포함된 컬럼 탐색
+   * - 같은 이메일 → 첫 번째 행만 유지
+   */
+  private deduplicateByIdentity(
+    rows: Array<Record<string, string>>,
+  ): Array<Record<string, string>> {
+    if (rows.length === 0) return rows;
+
+    // 1. 이메일 컬럼 자동 감지
+    const emailColumn = this.detectEmailColumn(rows);
+    if (!emailColumn) {
+      console.log('[HwpxGeneratorService] No email column detected, skipping deduplication');
+      return rows;
+    }
+
+    console.log(`[HwpxGeneratorService] Auto-detected email column: "${emailColumn}"`);
+
+    // 2. 이메일 기준 중복 제거 (첫 번째 행 유지)
+    const seen = new Set<string>();
+    const beforeCount = rows.length;
+    const deduplicated = rows.filter((row) => {
+      const email = (row[emailColumn] || '').trim().toLowerCase();
+      if (!email || seen.has(email)) return false;
+      seen.add(email);
+      return true;
+    });
+
+    console.log(`[HwpxGeneratorService] Deduplicated by "${emailColumn}": ${beforeCount} → ${deduplicated.length} rows`);
+    return deduplicated;
+  }
+
+  /**
+   * 이메일 컬럼 자동 감지
+   */
+  private detectEmailColumn(rows: Array<Record<string, string>>): string | null {
+    if (rows.length === 0) return null;
+
+    const columns = Object.keys(rows[0]);
+
+    // 1차: 헤더명으로 판별
+    const emailHeaderPatterns = ['이메일', 'email', 'e-mail', 'e_mail', 'mail'];
+    for (const col of columns) {
+      const normalized = col.replace(/\s+/g, '').toLowerCase();
+      if (emailHeaderPatterns.some((p) => normalized.includes(p))) {
+        return col;
+      }
+    }
+
+    // 2차: 값에 @ 포함된 컬럼 탐색 (샘플 5행 검사)
+    const sampleRows = rows.slice(0, Math.min(5, rows.length));
+    for (const col of columns) {
+      const emailCount = sampleRows.filter((row) => {
+        const val = (row[col] || '').trim();
+        return val.includes('@') && val.includes('.');
+      }).length;
+
+      if (emailCount >= Math.ceil(sampleRows.length * 0.5)) {
+        return col;
+      }
+    }
+
+    return null;
   }
 
   /**

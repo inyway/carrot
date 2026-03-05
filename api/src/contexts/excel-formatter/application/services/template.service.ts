@@ -1,6 +1,6 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
-import { EXCEL_PARSER_PORT, TEMPLATE_REPOSITORY_PORT } from '../ports';
-import type { ExcelParserPort, TemplateRepositoryPort, TemplateEntity } from '../ports';
+import { Injectable, Inject, NotFoundException, Logger, Optional } from '@nestjs/common';
+import { EXCEL_PARSER_PORT, TEMPLATE_REPOSITORY_PORT, FILE_STORAGE_PORT } from '../ports';
+import type { ExcelParserPort, TemplateRepositoryPort, TemplateEntity, FileStoragePort } from '../ports';
 import type { TemplateStructureVO, TemplateBlockVO } from '../../domain/value-objects';
 import { BlockType } from '../../domain/value-objects';
 
@@ -22,11 +22,16 @@ export interface UpdateBlockDto {
 
 @Injectable()
 export class TemplateService {
+  private readonly logger = new Logger(TemplateService.name);
+
   constructor(
     @Inject(EXCEL_PARSER_PORT)
     private readonly excelParser: ExcelParserPort,
     @Inject(TEMPLATE_REPOSITORY_PORT)
     private readonly templateRepository: TemplateRepositoryPort,
+    @Optional()
+    @Inject(FILE_STORAGE_PORT)
+    private readonly fileStorage?: FileStoragePort,
   ) {}
 
   /**
@@ -40,17 +45,30 @@ export class TemplateService {
   }
 
   /**
-   * 템플릿 생성 (파싱 + DB 저장)
+   * 템플릿 생성 (파싱 + 파일 업로드 + DB 저장)
    */
   async createTemplate(input: CreateTemplateServiceInput): Promise<TemplateEntity> {
     const structure = await this.excelParser.parseTemplate(input.buffer, input.fileName);
+
+    // Upload original file to storage if available
+    let fileUrl = input.fileUrl;
+    if (!fileUrl && this.fileStorage) {
+      try {
+        const storagePath = `templates/${input.companyId}/${Date.now()}_${input.fileName}`;
+        const contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        fileUrl = await this.fileStorage.uploadFile(input.buffer, storagePath, contentType);
+        this.logger.log(`Template file uploaded to: ${storagePath}`);
+      } catch (error) {
+        this.logger.warn(`Failed to upload template file, continuing without file URL: ${error}`);
+      }
+    }
 
     return this.templateRepository.create({
       companyId: input.companyId,
       name: input.name,
       description: input.description,
       fileName: input.fileName,
-      fileUrl: input.fileUrl,
+      fileUrl,
       structure,
     });
   }
