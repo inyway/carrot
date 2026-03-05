@@ -485,8 +485,15 @@ export class AttendanceReportGraphService {
       const ExcelJS = await import('exceljs');
       const workbook = new ExcelJS.default.Workbook();
       await workbook.xlsx.load(state.templateBuffer as unknown as ArrayBuffer);
-      const sheet = workbook.worksheets[0];
+      const templateSheetName = state.sheetName;
+      const sheet = templateSheetName
+        ? workbook.getWorksheet(templateSheetName)
+        : workbook.worksheets[0];
       if (!sheet) throw new Error('템플릿 시트를 찾을 수 없습니다.');
+
+      // Break shared formulas to prevent ExcelJS errors when modifying cells
+      // "Shared Formula master must exist above and or left of clone"
+      this.breakSharedFormulas(sheet);
 
       // Find data start row (first empty row after headers)
       const { headerRowNum: templateHeaderRow } = this.detectSmartHeader(sheet);
@@ -500,11 +507,10 @@ export class AttendanceReportGraphService {
         if (text) templateColMap.set(text, colNumber);
       });
 
-      // Insert rows if needed
+      // Clear existing data rows and prepare space
       const availableRows = sheet.rowCount - dataStartRow + 1;
       const needed = state.renderedStudents.length;
       if (needed > availableRows) {
-        // Insert additional rows (copy style from first data row)
         for (let i = 0; i < needed - availableRows; i++) {
           sheet.insertRow(dataStartRow + availableRows + i, []);
         }
@@ -596,6 +602,42 @@ export class AttendanceReportGraphService {
   // ==========================================
   // Helper methods
   // ==========================================
+
+  /**
+   * Break shared formulas in the worksheet to prevent ExcelJS errors
+   * when modifying cells that are part of a shared formula group.
+   */
+  private breakSharedFormulas(sheet: any): void {
+    try {
+      sheet.eachRow({ includeEmpty: false }, (row: any) => {
+        row.eachCell({ includeEmpty: false }, (cell: any) => {
+          try {
+            const model = cell.model;
+            if (model && model.type === 2 /* FormulaType */ && model.sharedFormula) {
+              // Convert shared formula to regular formula or clear it
+              const formula = cell.formula;
+              if (formula) {
+                cell.value = { formula };
+              } else if (cell.result !== undefined) {
+                cell.value = cell.result;
+              }
+            }
+          } catch {
+            // If we can't process a cell, just clear its formula
+            try {
+              if (cell.value && typeof cell.value === 'object' && 'sharedFormula' in cell.value) {
+                cell.value = cell.result ?? null;
+              }
+            } catch {
+              // Skip cells that can't be processed
+            }
+          }
+        });
+      });
+    } catch (error) {
+      console.warn('[Node:Render] breakSharedFormulas partial failure:', error instanceof Error ? error.message : error);
+    }
+  }
 
   private getCellText(cell: any): string {
     const value = cell?.value;
