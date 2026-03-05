@@ -36,6 +36,8 @@ function isAttendanceColumn(colName: string): boolean {
   const normalized = normalizeColName(colName);
   // Must contain a numeric + time-related keyword
   if (!/\d+\s*(week|월|회차)/i.test(normalized)) return false;
+  // Merged paired-row suffixes: (출결) and (일정) are both attendance columns
+  if (/\((출결|일정)\)\s*$/.test(colName)) return true;
   // Must NOT be a summary column (출석률, 결석 등)
   // "회차" alone (e.g. "출결현황_회차") is summary, but "N회차" (e.g. "12월_1회차") is attendance
   if (/출결|출석률|결석|합계|비고|미참석|출석\s*\(|공결/i.test(normalized)) return false;
@@ -263,14 +265,39 @@ function dateBasedAttendanceMapping(
     return []; // Template doesn't have parseable dates, fall back to positional
   }
 
+  // Detect merged paired-row columns: (출결) and (일정) suffixes
+  // Build a map from base column name to its (출결) and (일정) variants
+  const hasMergedPairs = dataAttendanceCols.some(c => /\((출결|일정)\)$/.test(c));
+  const scheduleToAttendance = new Map<string, string>(); // (일정) col → (출결) col
+  if (hasMergedPairs) {
+    const baseMap = new Map<string, { schedule?: string; attendance?: string }>();
+    for (const col of dataAttendanceCols) {
+      const isSchedule = /\(일정\)$/.test(col);
+      const isAttendance = /\(출결\)$/.test(col);
+      if (isSchedule || isAttendance) {
+        const base = col.replace(/\((출결|일정)\)$/, '').trim();
+        if (!baseMap.has(base)) baseMap.set(base, {});
+        if (isSchedule) baseMap.get(base)!.schedule = col;
+        if (isAttendance) baseMap.get(base)!.attendance = col;
+      }
+    }
+    baseMap.forEach((pair) => {
+      if (pair.schedule && pair.attendance) {
+        scheduleToAttendance.set(pair.schedule, pair.attendance);
+      }
+    });
+  }
+
   // Build raw data date index
   const usedTemplateCols = new Set<string>();
   for (const dataCol of dataAttendanceCols) {
+    // Skip (출결) columns in date extraction — they have Y/N, not dates
+    if (/\(출결\)$/.test(dataCol)) continue;
+
     const month = extractMonthFromDataCol(dataCol);
     if (!month) continue;
 
     // Try to get day from ANY sample data row (not just the first)
-    // Raw data has 2-row-per-student pattern: date row ("02(Tu)") + value row ("Y"/"N")
     let day: number | null = null;
     if (dataSampleData) {
       for (const row of dataSampleData) {
@@ -288,11 +315,13 @@ function dateBasedAttendanceMapping(
       const dateKey = `${month}-${day}`;
       const matchedTemplateCol = templateDateMap.get(dateKey);
       if (matchedTemplateCol) {
-        // Allow multiple data columns to map to the same template column
-        // (different class groups may contribute to the same date slot)
+        // If this is a (일정) column with a paired (출결) column,
+        // map the (출결) column instead (template expects Y/N, not dates)
+        const actualDataCol = scheduleToAttendance.get(dataCol) || dataCol;
+
         results.push({
           templateField: matchedTemplateCol,
-          dataColumn: dataCol,
+          dataColumn: actualDataCol,
           confidence: usedTemplateCols.has(matchedTemplateCol) ? 0.85 : 0.95,
           reason: `날짜 매칭 (${month}월 ${day}일)`,
         });
