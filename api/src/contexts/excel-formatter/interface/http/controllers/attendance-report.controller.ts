@@ -38,7 +38,7 @@ export class AttendanceReportController {
    * 출결 보고서 생성 (multipart: template + data + companyId)
    */
   @Post('generate')
-  @HttpCode(HttpStatus.ACCEPTED)
+  @HttpCode(HttpStatus.OK)
   @UseInterceptors(
     FileFieldsInterceptor([
       { name: 'template', maxCount: 1 },
@@ -52,6 +52,7 @@ export class AttendanceReportController {
       data?: Express.Multer.File[];
     },
     @Body() dto: GenerateAttendanceReportDto,
+    @Res() res: Response,
   ) {
     if (!files.template?.[0] || !files.data?.[0]) {
       throw new BadRequestException('template과 data 파일이 모두 필요합니다.');
@@ -59,41 +60,31 @@ export class AttendanceReportController {
 
     const templateBuffer = files.template[0].buffer;
     const dataBuffer = files.data[0].buffer;
+    const companyId = dto.companyId || 'default';
 
-    // Generate job ID
-    const jobId = `att-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    console.log('[AttendanceReport] Generating report synchronously...',
+      { companyId, sheetName: dto.sheetName });
 
-    // Initialize job
-    const job: AttendanceJobResult = {
-      jobId,
-      status: 'pending',
-      progress: 0,
-      createdAt: new Date(),
-    };
-    jobStore.set(jobId, job);
+    try {
+      const result = await this.graphService.execute(
+        templateBuffer,
+        dataBuffer,
+        companyId,
+        dto.sheetName,
+      );
 
-    // Create progress subject
-    const progressSubject = new Subject<ProgressInfo>();
-    progressSubjects.set(jobId, progressSubject);
+      console.log(`[AttendanceReport] Done: ${result.studentCount} students, ${result.mappedCount} mappings`);
 
-    // Execute pipeline asynchronously
-    this.executePipeline(jobId, templateBuffer, dataBuffer, dto, progressSubject).catch(
-      error => {
-        console.error(`[AttendanceReport] Job ${jobId} failed:`, error);
-        const failedJob = jobStore.get(jobId);
-        if (failedJob) {
-          failedJob.status = 'failed';
-          failedJob.error = error instanceof Error ? error.message : String(error);
-        }
-        progressSubject.complete();
-      },
-    );
-
-    return {
-      success: true,
-      jobId,
-      message: '출결 보고서 생성이 시작되었습니다.',
-    };
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="attendance-report-${Date.now()}.xlsx"`);
+      res.status(HttpStatus.OK).send(result.outputBuffer);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('[AttendanceReport] Pipeline error:', msg);
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        error: `출결 보고서 생성 실패: ${msg}`,
+      });
+    }
   }
 
   /**
@@ -198,7 +189,7 @@ export class AttendanceReportController {
     const result = await this.graphService.execute(
       templateBuffer,
       dataBuffer,
-      dto.companyId,
+      dto.companyId || 'default',
       dto.sheetName,
       onProgress,
     );
