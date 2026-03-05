@@ -20,10 +20,29 @@ function stripCompositePrefix(name: string): string {
 
 function isAttendanceColumn(colName: string): boolean {
   const normalized = normalizeColName(colName);
-  if (!/\d+\s*(week|월|회차)/i.test(normalized)) return false;
+  // Exclude summary/aggregate columns first
   if (/출결|출석률|결석|합계|비고|미참석|출석\s*\(|공결/i.test(normalized)) return false;
   if (/(?<!\d)회차\s*$/i.test(normalized)) return false;
-  return true;
+
+  // Pattern 1: "N week/월/회차" — original pattern
+  if (/\d+\s*(week|월|회차)/i.test(normalized)) return true;
+
+  // Pattern 2: Bare date "02(Tu)" or "15(Wed)" — RAW2 날짜 컬럼
+  if (/^\d{1,2}\s*\([A-Za-z]{2,3}\)$/.test(normalized)) return true;
+
+  // Pattern 3: Hierarchical date "출결현황_1월_02(Tu)" — 멀티로우 헤더에서 병합된 이름
+  if (/\d{1,2}\s*\([A-Za-z]{2,3}\)$/.test(normalized)) return true;
+
+  // Pattern 4: Pure numeric day index (1-40 range) — 숫자만 있는 날짜 인덱스
+  if (/^\d{1,2}$/.test(normalized)) {
+    const num = parseInt(normalized, 10);
+    if (num >= 1 && num <= 40) return true;
+  }
+
+  // Pattern 5: "M월D일" date format — "1월02일", "12월15일"
+  if (/^\d{1,2}월\d{1,2}일$/.test(normalized)) return true;
+
+  return false;
 }
 
 function isSummaryColumn(colName: string): boolean {
@@ -81,28 +100,73 @@ function extractDayFromSampleValue(value: unknown): number | null {
   return match ? parseInt(match[1], 10) : null;
 }
 
+/**
+ * 클래스명에서 필드 추출
+ *
+ * 5-part format: 학기_프로그램_요일교시_레벨_강사명
+ *   parts[0] "쿠팡 25-4학기" → 법인: "쿠팡" (학기 suffix 제거)
+ *   parts[1] "프리토킹 영어"  → 프로그램
+ *   parts[2] "금6교시~7교시"  → 요일: "금" (첫 한글 요일문자)
+ *   parts[3] "M6"            → 레벨
+ *   parts[4] "Sarah Kim(김사라)" → 강사명: "Sarah Kim" (괄호 제거)
+ *
+ * 3-part format (legacy): 법인_프로그램_레벨
+ */
 function extractFromClassName(className: string, fieldKey: string): string | null {
   const parts = className.split('_');
   if (parts.length < 3) return null;
 
   const key = fieldKey.toLowerCase();
+  const is5Part = parts.length >= 5;
 
+  // 법인 / 회사 — always parts[0], remove semester suffix
   if (key === '법인' || key === '회사' || key === 'company') {
     const companyPart = parts[0].replace(/\s*\d{2,4}[-–]?\d*학기.*$/, '').trim();
     return companyPart.length > 0 ? companyPart : null;
   }
 
+  // 프로그램 / 교재 — parts[1]
   if (key === '프로그램' || key === 'program' || key === '교재') {
     return parts.length >= 2 ? parts[1].trim() : null;
   }
 
+  // 요일 — 5-part: parts[2]에서 첫 한글 요일 문자 추출
+  if (key === '요일' || key === 'day' || key === 'class day') {
+    if (is5Part) {
+      const dayMatch = parts[2].match(/([월화수목금토일])/);
+      return dayMatch ? dayMatch[1] : parts[2].trim();
+    }
+    return null;
+  }
+
+  // 진행시간 — 5-part: parts[2] 전체 (요일+교시)
+  if (key === '진행시간' || key === 'class time' || key === '시간') {
+    if (is5Part) {
+      return parts[2].trim();
+    }
+    return null;
+  }
+
+  // 레벨 — 5-part: parts[3], 3-part: parts[2] or level-like part
   if (key === '레벨' || key === 'level') {
+    if (is5Part) {
+      return parts[3].trim();
+    }
+    // Legacy: scan for level-like values first
     for (const part of parts) {
       if (/^(beginner|elementary|pre.?intermediate|intermediate|upper.?intermediate|advanced)/i.test(part.trim())) {
         return part.trim();
       }
     }
     return parts.length >= 3 ? parts[2].trim() : null;
+  }
+
+  // 강사 / 강사명 — 5-part: parts[4], remove parenthetical Korean name
+  if (key === '강사' || key === '강사명' || key === 'teacher' || key === 'teacher name') {
+    if (is5Part) {
+      return parts[4].replace(/\s*\([^)]*\)\s*$/, '').trim() || null;
+    }
+    return null;
   }
 
   return null;

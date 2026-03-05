@@ -73,6 +73,18 @@ export interface StudentRenderData {
   metadata: Record<string, string>;
   calculated: CalculatedAttendance;
   formulas: AttendanceFormulas;
+  /** 멀티시트 라우팅용 — 그룹/1:1 시트 분류 */
+  targetSheet?: string;
+}
+
+/** 계층적 컬럼 정보 (멀티로우 헤더에서 추출) */
+export interface HierarchicalColumn {
+  /** 표시 이름 (최하위 행의 텍스트 또는 병합된 전체 경로) */
+  name: string;
+  /** 엑셀 컬럼 인덱스 (1-based) */
+  colIndex: number;
+  /** 계층 경로 (상위 → 하위) e.g. ["출결현황", "1월", "02(Tu)"] */
+  path?: string[];
 }
 
 /** LangGraph 파이프라인 상태 */
@@ -89,6 +101,14 @@ export interface AttendanceGraphState {
   templateSampleData: Record<string, unknown>[];
   dataSampleData: Record<string, unknown>[];
   dataMetadata: Record<string, string>;
+  /** raw 데이터 헤더 행 번호들 (멀티로우 시 복수) */
+  dataHeaderRows: number[];
+  /** raw 데이터 시작 행 (헤더 아래 첫 데이터 행) */
+  dataStartRow: number;
+  /** 템플릿 데이터 시작 행 */
+  templateDataStartRow: number;
+  /** 계층적 컬럼 정보 (멀티로우 헤더에서 추출) */
+  dataHierarchicalColumns: HierarchicalColumn[];
 
   // Map 노드 출력
   mappings: AttendanceMappingResult[];

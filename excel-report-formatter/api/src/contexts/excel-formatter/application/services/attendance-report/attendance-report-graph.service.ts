@@ -14,6 +14,7 @@ import {
   StudentRenderData,
   ProgressInfo,
   AttendanceRule,
+  HierarchicalColumn,
 } from './types';
 import { PIPELINE_PROGRESS } from './attendance-constants';
 import { AttendanceMappingService } from './attendance-mapping.service';
@@ -35,6 +36,10 @@ const GraphAnnotation = Annotation.Root({
   templateSampleData: Annotation<Record<string, unknown>[]>,
   dataSampleData: Annotation<Record<string, unknown>[]>,
   dataMetadata: Annotation<Record<string, string>>,
+  dataHeaderRows: Annotation<number[]>,
+  dataStartRow: Annotation<number>,
+  templateDataStartRow: Annotation<number>,
+  dataHierarchicalColumns: Annotation<HierarchicalColumn[]>,
 
   // Map output
   mappings: Annotation<AttendanceMappingResult[]>,
@@ -131,6 +136,10 @@ export class AttendanceReportGraphService {
       templateSampleData: [],
       dataSampleData: [],
       dataMetadata: {},
+      dataHeaderRows: [],
+      dataStartRow: 0,
+      templateDataStartRow: 0,
+      dataHierarchicalColumns: [],
       mappings: [],
       unmappedColumns: [],
       students: [],
@@ -172,8 +181,10 @@ export class AttendanceReportGraphService {
       const templateSheet = templateWorkbook.worksheets[0];
       if (!templateSheet) throw new Error('템플릿 파일에 시트가 없습니다.');
 
-      const templateColumns = this.extractColumns(templateSheet);
-      const templateSampleData = this.extractSampleData(templateSheet, templateColumns, 2);
+      const templateHeader = this.detectMultiRowHeader(templateSheet);
+      const templateColumns = templateHeader.columns;
+      const templateDataStartRow = templateHeader.dataStartRow;
+      const templateSampleData = this.extractSampleDataFromRow(templateSheet, templateColumns, 2, templateDataStartRow);
 
       // --- Parse data file ---
       const dataWorkbook = new ExcelJS.default.Workbook();
@@ -184,15 +195,19 @@ export class AttendanceReportGraphService {
         : dataWorkbook.worksheets[0];
       if (!dataSheet) throw new Error(`데이터 파일에서 시트를 찾을 수 없습니다: ${targetSheetName || '(첫 번째 시트)'}`);
 
-      // Smart header detection (from hwpx-mapping-graph.service.ts pattern)
-      const { columns: dataColumns, headerRowNum } = this.detectSmartHeader(dataSheet);
-      const dataSampleData = this.extractSampleData(dataSheet, dataColumns, 5, headerRowNum + 1);
+      // Multi-row header detection
+      const dataHeader = this.detectMultiRowHeader(dataSheet);
+      const dataColumns = dataHeader.columns;
+      const dataStartRow = dataHeader.dataStartRow;
+      const dataSampleData = this.extractSampleDataFromRow(dataSheet, dataColumns, 5, dataStartRow);
 
       // Extract metadata from the data file (rows above header)
-      const dataMetadata = this.extractMetadata(dataSheet, headerRowNum);
+      const firstHeaderRow = dataHeader.headerRows.length > 0 ? dataHeader.headerRows[0] : 1;
+      const dataMetadata = this.extractMetadata(dataSheet, firstHeaderRow);
 
-      console.log(`[Node:Parse] Template: ${templateColumns.length} cols, Data: ${dataColumns.length} cols`);
-      console.log(`[Node:Parse] Data header at row ${headerRowNum}, metadata keys: ${Object.keys(dataMetadata).join(', ')}`);
+      console.log(`[Node:Parse] Template: ${templateColumns.length} cols (dataStart=${templateDataStartRow}), Data: ${dataColumns.length} cols (dataStart=${dataStartRow})`);
+      console.log(`[Node:Parse] Data header rows: [${dataHeader.headerRows.join(',')}], hierarchical cols: ${dataHeader.hierarchicalColumns.length}`);
+      console.log(`[Node:Parse] metadata keys: ${Object.keys(dataMetadata).join(', ')}`);
 
       return {
         templateColumns,
@@ -200,6 +215,10 @@ export class AttendanceReportGraphService {
         templateSampleData,
         dataSampleData,
         dataMetadata,
+        dataHeaderRows: dataHeader.headerRows,
+        dataStartRow,
+        templateDataStartRow,
+        dataHierarchicalColumns: dataHeader.hierarchicalColumns,
         progress: PIPELINE_PROGRESS.PARSE.end,
         currentStep: 'parse_done',
       };
@@ -275,15 +294,26 @@ export class AttendanceReportGraphService {
         : dataWorkbook.worksheets[0];
       if (!dataSheet) throw new Error('데이터 시트를 찾을 수 없습니다.');
 
-      const { headerRowNum } = this.detectSmartHeader(dataSheet);
+      // Use state.dataStartRow from nodeParse (no re-detection)
+      const dataStartRow = state.dataStartRow;
 
-      // Build column index map (data column name -> column number)
-      const headerRow = dataSheet.getRow(headerRowNum);
+      // Build column index map from hierarchical columns or last header row
       const colIndexMap = new Map<string, number>();
-      headerRow.eachCell({ includeEmpty: false }, (cell: any, colNumber: number) => {
-        const text = this.getCellText(cell);
-        if (text) colIndexMap.set(text, colNumber);
-      });
+      if (state.dataHierarchicalColumns?.length > 0) {
+        for (const hc of state.dataHierarchicalColumns) {
+          colIndexMap.set(hc.name, hc.colIndex);
+        }
+      } else {
+        // Fallback: read from last header row
+        const lastHeaderRow = state.dataHeaderRows?.length > 0
+          ? state.dataHeaderRows[state.dataHeaderRows.length - 1]
+          : dataStartRow - 1;
+        const headerRow = dataSheet.getRow(lastHeaderRow);
+        headerRow.eachCell({ includeEmpty: false }, (cell: any, colNumber: number) => {
+          const text = this.getCellText(cell);
+          if (text) colIndexMap.set(text, colNumber);
+        });
+      }
 
       // Classify mappings
       const attendanceMappings: AttendanceMappingResult[] = [];
@@ -307,14 +337,25 @@ export class AttendanceReportGraphService {
       const students: StudentRow[] = [];
       const totalRows = dataSheet.rowCount;
 
-      // Detect 2-row-per-student pattern (odd=dates, even=symbols)
-      const is2RowPattern = this.detect2RowPattern(dataSheet, headerRowNum, attendanceMappings, colIndexMap);
+      // Detect 2-row-per-student pattern with majority vote across multiple columns
+      const is2RowPattern = this.detect2RowPatternMajority(dataSheet, dataStartRow, attendanceMappings, colIndexMap);
+
+      // Decompose class name for metadata enrichment
+      const classNameCol = this.findClassNameColumn(state.dataColumns);
+      let classNameValue: string | null = null;
+      if (classNameCol) {
+        const colNum = colIndexMap.get(classNameCol);
+        if (colNum) {
+          // Read from first data row
+          classNameValue = this.getCellText(dataSheet.getRow(dataStartRow).getCell(colNum));
+        }
+      }
 
       const rowStep = is2RowPattern ? 2 : 1;
-      for (let rowNum = headerRowNum + 1; rowNum <= totalRows; rowNum += rowStep) {
+      for (let rowNum = dataStartRow; rowNum <= totalRows; rowNum += rowStep) {
         const row = dataSheet.getRow(rowNum);
 
-        // Skip empty rows
+        // Skip empty rows — check identity columns for data
         const hasData = identityMappings.some(m => {
           const colNum = colIndexMap.get(m.dataColumn);
           return colNum && this.getCellText(row.getCell(colNum)).length > 0;
@@ -364,6 +405,11 @@ export class AttendanceReportGraphService {
           }
         }
 
+        // Enrich metadata from class name decomposition
+        if (classNameValue) {
+          this.enrichMetadataFromClassName(student, classNameValue, state.mappings);
+        }
+
         // Summary (for reference)
         for (const m of summaryMappings) {
           const colNum = colIndexMap.get(m.dataColumn);
@@ -373,6 +419,11 @@ export class AttendanceReportGraphService {
         }
 
         students.push(student);
+      }
+
+      // Classify targetSheet for each student (그룹 vs 1:1)
+      for (const student of students) {
+        student.metadata['__targetSheet'] = this.classifyTargetSheet(student, students.length);
       }
 
       console.log(`[Node:Transform] Extracted ${students.length} students (2-row pattern: ${is2RowPattern})`);
@@ -413,7 +464,8 @@ export class AttendanceReportGraphService {
       // Excel 열 문자로 변환 (0-indexed -> A, B, C, ...)
       const startCol = this.numToCol(firstAttIdx + 1); // +1 for 1-indexed
       const endCol = this.numToCol(lastAttIdx + 1);
-      const dataStartRow = 5; // 기본값, 실제는 템플릿 분석 필요
+      // 동적 dataStartRow — 템플릿 헤더 분석 결과 사용
+      const dataStartRow = state.templateDataStartRow || 5;
 
       const { renderedStudents, rule } = await this.calculationService.processStudents(
         state.students,
@@ -455,72 +507,67 @@ export class AttendanceReportGraphService {
       const ExcelJS = await import('exceljs');
       const workbook = new ExcelJS.default.Workbook();
       await workbook.xlsx.load(state.templateBuffer as unknown as ArrayBuffer);
-      const sheet = workbook.worksheets[0];
-      if (!sheet) throw new Error('템플릿 시트를 찾을 수 없습니다.');
 
-      // Find data start row (first empty row after headers)
-      const { headerRowNum: templateHeaderRow } = this.detectSmartHeader(sheet);
-      const dataStartRow = templateHeaderRow + 1;
-
-      // Template column index map
-      const templateHeaderCells = sheet.getRow(templateHeaderRow);
-      const templateColMap = new Map<string, number>();
-      templateHeaderCells.eachCell({ includeEmpty: false }, (cell: any, colNumber: number) => {
-        const text = this.getCellText(cell);
-        if (text) templateColMap.set(text, colNumber);
-      });
-
-      // Insert rows if needed
-      const availableRows = sheet.rowCount - dataStartRow + 1;
-      const needed = state.renderedStudents.length;
-      if (needed > availableRows) {
-        // Insert additional rows (copy style from first data row)
-        for (let i = 0; i < needed - availableRows; i++) {
-          sheet.insertRow(dataStartRow + availableRows + i, []);
-        }
+      // Group students by targetSheet
+      const sheetGroups = new Map<string, StudentRenderData[]>();
+      for (const student of state.renderedStudents) {
+        const targetSheet = student.targetSheet || 'default';
+        if (!sheetGroups.has(targetSheet)) sheetGroups.set(targetSheet, []);
+        sheetGroups.get(targetSheet)!.push(student);
       }
 
-      // Fill data
-      for (let i = 0; i < state.renderedStudents.length; i++) {
-        const student = state.renderedStudents[i];
-        const rowNum = dataStartRow + i;
-        const row = sheet.getRow(rowNum);
+      // If only one group (default), render to first sheet
+      // If multiple groups, try to find matching sheets or use first sheet
+      const renderToSheet = (
+        sheet: any,
+        students: StudentRenderData[],
+        templateDataStartRow: number,
+      ) => {
+        const dataStartRow = templateDataStartRow;
 
-        // Identity fields
-        for (const [field, value] of Object.entries(student.identity)) {
-          const colNum = templateColMap.get(field);
-          if (colNum) {
-            row.getCell(colNum).value = value;
+        // Template column index map — read from the row above dataStartRow
+        const templateColMap = new Map<string, number>();
+        // Scan header rows (all rows from 1 to dataStartRow-1) to build column map
+        for (let r = 1; r < dataStartRow; r++) {
+          const headerRow = sheet.getRow(r);
+          headerRow.eachCell({ includeEmpty: false }, (cell: any, colNumber: number) => {
+            const text = this.getCellText(cell);
+            if (text && !templateColMap.has(text)) {
+              templateColMap.set(text, colNumber);
+            }
+          });
+        }
+
+        // Break shared formulas in the data area before overwriting
+        for (let rowNum = dataStartRow; rowNum <= sheet.rowCount; rowNum++) {
+          const row = sheet.getRow(rowNum);
+          row.eachCell({ includeEmpty: false }, (cell: any) => {
+            if (cell.value && typeof cell.value === 'object' && 'sharedFormula' in cell.value) {
+              // Convert shared formula to regular formula
+              const formula = cell.value.formula || cell.value.sharedFormula;
+              if (formula) {
+                cell.value = { formula };
+              }
+            }
+          });
+        }
+
+        // Insert rows if needed
+        const availableRows = Math.max(0, sheet.rowCount - dataStartRow + 1);
+        const needed = students.length;
+        if (needed > availableRows) {
+          for (let i = 0; i < needed - availableRows; i++) {
+            sheet.insertRow(dataStartRow + availableRows + i, []);
           }
         }
 
-        // Attendance symbols
-        for (const [field, symbol] of Object.entries(student.attendance)) {
-          const colNum = templateColMap.get(field);
-          if (colNum) {
-            row.getCell(colNum).value = symbol;
-          }
-        }
-
-        // Metadata fields
-        for (const [field, value] of Object.entries(student.metadata)) {
-          const colNum = templateColMap.get(field);
-          if (colNum) {
-            row.getCell(colNum).value = value;
-          }
-        }
-
-        // Summary fields with formulas
-        const summaryFieldMap: Record<string, keyof typeof student.formulas> = {};
+        // Build summary field mapping once
+        const summaryFieldMap: Record<string, keyof StudentRenderData['formulas']> = {};
         for (const col of state.templateColumns) {
           if (AttendanceMappingService.isSummaryColumn(col)) {
             const normalizedCol = col.toLowerCase();
             if (normalizedCol.includes('출석') && normalizedCol.includes('률')) {
-              if (normalizedCol.includes('실')) {
-                summaryFieldMap[col] = 'realAttendanceRate';
-              } else {
-                summaryFieldMap[col] = 'attendanceRate';
-              }
+              summaryFieldMap[col] = normalizedCol.includes('실') ? 'realAttendanceRate' : 'attendanceRate';
             } else if (normalizedCol.includes('출석') || normalizedCol.includes('y')) {
               summaryFieldMap[col] = 'attended';
             } else if (normalizedCol.includes('결석') || normalizedCol.includes('n')) {
@@ -535,20 +582,70 @@ export class AttendanceReportGraphService {
           }
         }
 
-        for (const [field, formulaKey] of Object.entries(summaryFieldMap)) {
-          const colNum = templateColMap.get(field);
-          if (colNum && student.formulas[formulaKey]) {
-            row.getCell(colNum).value = { formula: student.formulas[formulaKey] } as any;
+        // Fill data
+        for (let i = 0; i < students.length; i++) {
+          const student = students[i];
+          const rowNum = dataStartRow + i;
+          const row = sheet.getRow(rowNum);
+
+          // Identity fields
+          for (const [field, value] of Object.entries(student.identity)) {
+            const colNum = templateColMap.get(field);
+            if (colNum) row.getCell(colNum).value = value;
+          }
+
+          // Attendance symbols
+          for (const [field, symbol] of Object.entries(student.attendance)) {
+            const colNum = templateColMap.get(field);
+            if (colNum) row.getCell(colNum).value = symbol;
+          }
+
+          // Metadata fields (skip internal keys starting with __)
+          for (const [field, value] of Object.entries(student.metadata)) {
+            if (field.startsWith('__')) continue;
+            const colNum = templateColMap.get(field);
+            if (colNum) row.getCell(colNum).value = value;
+          }
+
+          // Summary fields with formulas
+          for (const [field, formulaKey] of Object.entries(summaryFieldMap)) {
+            const colNum = templateColMap.get(field);
+            if (colNum && student.formulas[formulaKey]) {
+              row.getCell(colNum).value = { formula: student.formulas[formulaKey] } as any;
+            }
+          }
+
+          row.commit();
+        }
+      };
+
+      // Render each sheet group
+      if (sheetGroups.size <= 1) {
+        // Single group → first sheet
+        const sheet = workbook.worksheets[0];
+        if (!sheet) throw new Error('템플릿 시트를 찾을 수 없습니다.');
+        const allStudents = state.renderedStudents;
+        renderToSheet(sheet, allStudents, state.templateDataStartRow || 5);
+      } else {
+        // Multi-sheet: try to match sheet names, fallback to first sheet
+        for (const [sheetKey, students] of sheetGroups) {
+          let sheet = workbook.getWorksheet(sheetKey);
+          if (!sheet) {
+            // Fallback: use first sheet for all
+            sheet = workbook.worksheets[0];
+          }
+          if (sheet) {
+            // Each sheet may have its own header structure
+            const sheetHeader = this.detectMultiRowHeader(sheet);
+            renderToSheet(sheet, students, sheetHeader.dataStartRow);
           }
         }
-
-        row.commit();
       }
 
       // Generate output buffer
       const outputBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
 
-      console.log(`[Node:Render] Report generated: ${state.renderedStudents.length} students`);
+      console.log(`[Node:Render] Report generated: ${state.renderedStudents.length} students across ${sheetGroups.size} sheet group(s)`);
 
       return {
         outputBuffer,
@@ -579,60 +676,179 @@ export class AttendanceReportGraphService {
     return String(value).trim();
   }
 
-  private extractColumns(sheet: any): string[] {
-    const { columns } = this.detectSmartHeader(sheet);
-    return columns;
-  }
+  /**
+   * 멀티로우 헤더 감지 — RAW2 3-row 헤더 등 계층적 구조 지원
+   *
+   * 전략:
+   * 1. 시트 상단 15행 스캔, 각 행의 non-empty 셀 수 집계
+   * 2. 연속된 "dense" 행(3+ 셀)을 헤더 후보 그룹으로 묶음
+   * 3. 가장 많은 컬럼을 커버하는 그룹 선택
+   * 4. 그룹 내 마지막 행을 leaf header로 사용, 상위 행은 계층 경로
+   * 5. dataStartRow = 마지막 헤더 행 + 1
+   */
+  private detectMultiRowHeader(sheet: any): {
+    columns: string[];
+    headerRows: number[];
+    dataStartRow: number;
+    hierarchicalColumns: HierarchicalColumn[];
+  } {
+    const maxScan = Math.min(15, sheet.rowCount);
+    const rowInfos: Array<{
+      rowNum: number;
+      cells: Map<number, string>; // colIndex (1-based) → text
+      nonEmptyCount: number;
+    }> = [];
 
-  private detectSmartHeader(sheet: any): { columns: string[]; headerRowNum: number } {
-    const rows: Array<{ rowNum: number; values: string[]; score: number }> = [];
-
-    for (let rowNum = 1; rowNum <= Math.min(10, sheet.rowCount); rowNum++) {
+    for (let rowNum = 1; rowNum <= maxScan; rowNum++) {
       const row = sheet.getRow(rowNum);
-      const values: string[] = [];
+      const cells = new Map<number, string>();
       let nonEmptyCount = 0;
-      let hasShortLabels = 0;
-      let hasSectionMarkers = 0;
 
-      row.eachCell({ includeEmpty: true }, (cell: any, colNumber: number) => {
-        const trimmed = this.getCellText(cell);
-        values[colNumber - 1] = trimmed;
-        if (trimmed.length > 0) {
+      row.eachCell({ includeEmpty: false }, (cell: any, colNumber: number) => {
+        const text = this.getCellText(cell);
+        if (text.length > 0) {
+          cells.set(colNumber, text);
           nonEmptyCount++;
-          if (trimmed.length >= 2 && trimmed.length <= 10) hasShortLabels++;
-          if (/^\d+\./.test(trimmed)) hasSectionMarkers++;
         }
       });
 
-      const score = nonEmptyCount * 2 + hasShortLabels * 3 - hasSectionMarkers * 10;
-      if (nonEmptyCount >= 3) {
-        rows.push({ rowNum, values, score });
+      rowInfos.push({ rowNum, cells, nonEmptyCount });
+    }
+
+    // Group consecutive dense rows (3+ non-empty cells)
+    const groups: Array<typeof rowInfos> = [];
+    let currentGroup: typeof rowInfos = [];
+
+    for (const info of rowInfos) {
+      if (info.nonEmptyCount >= 3) {
+        currentGroup.push(info);
+      } else {
+        if (currentGroup.length > 0) {
+          groups.push(currentGroup);
+          currentGroup = [];
+        }
+      }
+    }
+    if (currentGroup.length > 0) groups.push(currentGroup);
+
+    if (groups.length === 0) {
+      return { columns: [], headerRows: [1], dataStartRow: 2, hierarchicalColumns: [] };
+    }
+
+    // Pick best group: prefer groups where rows have short label-like cells (not data rows)
+    let bestGroup = groups[0];
+    let bestScore = -1;
+
+    for (const group of groups) {
+      // Score: sum of non-empty cells across header rows, bonus for short labels, penalty for numeric-only rows
+      let score = 0;
+      let hasDataLikeRow = false;
+
+      for (const info of group) {
+        let shortLabels = 0;
+        let numericOnly = true;
+        for (const text of info.cells.values()) {
+          if (text.length >= 1 && text.length <= 20) shortLabels++;
+          if (!/^\d+(\.\d+)?$/.test(text)) numericOnly = false;
+        }
+        score += info.nonEmptyCount + shortLabels * 2;
+        if (numericOnly && info.nonEmptyCount > 5) hasDataLikeRow = true;
+      }
+
+      // If the group's last row looks like pure data, it's probably not a header group
+      if (hasDataLikeRow) score -= 50;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestGroup = group;
       }
     }
 
-    rows.sort((a, b) => b.score - a.score);
+    // Determine if this is a multi-row header vs single-row
+    // A group with rows where upper rows have FEWER cells than lower rows → hierarchical header
+    const headerRows = bestGroup.map(g => g.rowNum);
+    const lastHeaderInfo = bestGroup[bestGroup.length - 1];
+    const dataStartRow = lastHeaderInfo.rowNum + 1;
 
-    if (rows.length === 0) {
-      return { columns: [], headerRowNum: 1 };
+    // Build column names from the leaf (last) header row
+    // For multi-row headers, build hierarchical path
+    const maxCol = Math.max(...bestGroup.flatMap(g => Array.from(g.cells.keys())));
+    const columns: string[] = [];
+    const hierarchicalColumns: HierarchicalColumn[] = [];
+    // Track which column indices we've already seen via sparse array
+    const colNames = new Array<string>(maxCol + 1).fill('');
+
+    // For single-row headers, just use that row
+    if (bestGroup.length === 1) {
+      for (const [colIdx, text] of lastHeaderInfo.cells) {
+        colNames[colIdx] = text;
+      }
+    } else {
+      // Multi-row: build full path names
+      // For each column, walk top-down through header rows to build path
+      // Handle merged cells: if a row doesn't have a value at colIdx, inherit from nearest left cell in same row
+      const rowMergedValues: Map<number, Map<number, string>> = new Map();
+
+      for (const info of bestGroup) {
+        const merged = new Map<number, string>();
+        let lastVal = '';
+        for (let col = 1; col <= maxCol; col++) {
+          if (info.cells.has(col)) {
+            lastVal = info.cells.get(col)!;
+          }
+          // Only propagate if there was a value to the left AND this column has data in the leaf row
+          if (lastVal) {
+            merged.set(col, lastVal);
+          }
+        }
+        rowMergedValues.set(info.rowNum, merged);
+      }
+
+      for (let colIdx = 1; colIdx <= maxCol; colIdx++) {
+        // Check if the leaf row has data at this column
+        const leafText = lastHeaderInfo.cells.get(colIdx);
+        if (!leafText) continue;
+
+        const path: string[] = [];
+        for (const info of bestGroup) {
+          const mergedMap = rowMergedValues.get(info.rowNum);
+          const val = mergedMap?.get(colIdx);
+          if (val) path.push(val);
+        }
+
+        // Build unique column name
+        // If all path parts are the same (single-row repeated), just use leaf
+        const uniqueParts = [...new Set(path)];
+        const name = uniqueParts.length <= 1 ? leafText : uniqueParts.join('_');
+
+        colNames[colIdx] = name;
+        hierarchicalColumns.push({ name, colIndex: colIdx, path });
+      }
     }
 
-    const headerRow = rows[0];
-    const columns = headerRow.values.filter(v => v && v.length > 0 && v !== 'undefined');
+    // Build flat column list (preserving order, skipping empty)
+    for (let i = 1; i <= maxCol; i++) {
+      if (colNames[i] && colNames[i].length > 0) {
+        columns.push(colNames[i]);
+        // Add hierarchical info for single-row case too
+        if (bestGroup.length === 1) {
+          hierarchicalColumns.push({ name: colNames[i], colIndex: i });
+        }
+      }
+    }
 
-    return { columns, headerRowNum: headerRow.rowNum };
+    return { columns, headerRows, dataStartRow, hierarchicalColumns };
   }
 
-  private extractSampleData(
+  private extractSampleDataFromRow(
     sheet: any,
     columns: string[],
     maxRows: number,
-    startRow?: number,
+    startRow: number,
   ): Record<string, unknown>[] {
-    const { headerRowNum } = this.detectSmartHeader(sheet);
-    const dataStartRow = startRow ?? headerRowNum + 1;
     const samples: Record<string, unknown>[] = [];
 
-    for (let rowNum = dataStartRow; rowNum < dataStartRow + maxRows && rowNum <= sheet.rowCount; rowNum++) {
+    for (let rowNum = startRow; rowNum < startRow + maxRows && rowNum <= sheet.rowCount; rowNum++) {
       const row = sheet.getRow(rowNum);
       const record: Record<string, unknown> = {};
       let hasData = false;
@@ -681,30 +897,116 @@ export class AttendanceReportGraphService {
     return metadata;
   }
 
-  private detect2RowPattern(
+  /**
+   * 2-row-per-student 패턴 감지 — 복수 컬럼 majority vote
+   * 단일 컬럼이 아닌 여러 출결 컬럼에서 패턴을 확인하여 신뢰도 향상
+   */
+  private detect2RowPatternMajority(
     sheet: any,
-    headerRowNum: number,
+    dataStartRow: number,
     attendanceMappings: AttendanceMappingResult[],
     colIndexMap: Map<string, number>,
   ): boolean {
     if (attendanceMappings.length === 0) return false;
 
-    // Check first 2 data rows
-    const row1 = sheet.getRow(headerRowNum + 1);
-    const row2 = sheet.getRow(headerRowNum + 2);
+    const row1 = sheet.getRow(dataStartRow);
+    const row2 = sheet.getRow(dataStartRow + 1);
+    if (!row1 || !row2) return false;
 
-    const firstAttMapping = attendanceMappings[0];
-    const colNum = colIndexMap.get(firstAttMapping.dataColumn);
-    if (!colNum) return false;
+    // Sample up to 10 attendance columns
+    const sampled = attendanceMappings.slice(0, 10);
+    let dateSymbolVotes = 0;
+    let totalVotes = 0;
 
-    const val1 = this.getCellText(row1.getCell(colNum));
-    const val2 = this.getCellText(row2.getCell(colNum));
+    for (const m of sampled) {
+      const colNum = colIndexMap.get(m.dataColumn);
+      if (!colNum) continue;
 
-    // 2-row pattern: first row has date-like values ("02(Tu)"), second has symbols ("Y", "N")
-    const isDateValue = /^\d{1,2}\s*\(/.test(val1);
-    const isSymbolValue = /^[A-Z]{1,3}$/i.test(val2);
+      const val1 = this.getCellText(row1.getCell(colNum));
+      const val2 = this.getCellText(row2.getCell(colNum));
 
-    return isDateValue && isSymbolValue;
+      if (!val1 && !val2) continue; // Both empty → skip
+      totalVotes++;
+
+      // 2-row pattern indicators:
+      // Row 1: date-like ("02(Tu)", "15", "3월") or empty
+      // Row 2: attendance symbol ("Y", "N", "BZ", "VA", "L", "C")
+      const isRow1DateLike = /^\d{1,2}\s*\(/.test(val1) || /^\d{1,2}$/.test(val1) || val1 === '';
+      const isRow2Symbol = /^[A-Z]{1,3}$/i.test(val2);
+
+      if (isRow1DateLike && isRow2Symbol) {
+        dateSymbolVotes++;
+      }
+    }
+
+    // Majority vote: >50% of sampled columns show date-symbol pattern
+    return totalVotes > 0 && dateSymbolVotes / totalVotes > 0.5;
+  }
+
+  /** 데이터 컬럼에서 클래스명 컬럼 찾기 */
+  private findClassNameColumn(dataColumns: string[]): string | null {
+    return dataColumns.find(dc => {
+      const lower = dc.toLowerCase();
+      return (
+        lower.includes('class name') ||
+        lower.includes('클래스명') ||
+        lower.includes('class_name') ||
+        lower.includes('classname')
+      );
+    }) || null;
+  }
+
+  /** 클래스명에서 메타데이터 필드 보충 */
+  private enrichMetadataFromClassName(
+    student: StudentRow,
+    className: string,
+    _mappings: AttendanceMappingResult[],
+  ): void {
+    const parts = className.split('_');
+    if (parts.length < 3) return;
+
+    const is5Part = parts.length >= 5;
+
+    // Only fill metadata fields that haven't been set yet
+    const setIfEmpty = (key: string, value: string | null) => {
+      if (value && !student.metadata[key]) {
+        student.metadata[key] = value;
+      }
+    };
+
+    // 법인
+    const company = parts[0].replace(/\s*\d{2,4}[-–]?\d*학기.*$/, '').trim();
+    setIfEmpty('법인', company || null);
+
+    // 프로그램
+    setIfEmpty('프로그램', parts[1]?.trim() || null);
+
+    if (is5Part) {
+      // 요일
+      const dayMatch = parts[2].match(/([월화수목금토일])/);
+      setIfEmpty('요일', dayMatch ? dayMatch[1] : parts[2].trim());
+
+      // 진행시간
+      setIfEmpty('진행시간', parts[2].trim());
+
+      // 레벨
+      setIfEmpty('레벨', parts[3]?.trim() || null);
+
+      // 강사명
+      const teacher = parts[4]?.replace(/\s*\([^)]*\)\s*$/, '').trim();
+      setIfEmpty('강사', teacher || null);
+    } else {
+      // 3-part legacy: parts[2] = 레벨
+      setIfEmpty('레벨', parts[2]?.trim() || null);
+    }
+  }
+
+  /** 학생을 그룹/1:1 시트로 분류 */
+  private classifyTargetSheet(student: StudentRow, totalStudents: number): string {
+    // Default: group sheet if more than 1 student
+    // Can be extended with program-name-based logic
+    if (totalStudents <= 2) return '1:1';
+    return 'group';
   }
 
   private numToCol(num: number): string {
