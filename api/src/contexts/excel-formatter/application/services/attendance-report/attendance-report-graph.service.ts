@@ -608,35 +608,39 @@ export class AttendanceReportGraphService {
    * when modifying cells that are part of a shared formula group.
    */
   private breakSharedFormulas(sheet: any): void {
+    let converted = 0;
     try {
       sheet.eachRow({ includeEmpty: false }, (row: any) => {
         row.eachCell({ includeEmpty: false }, (cell: any) => {
           try {
-            const model = cell.model;
-            if (model && model.type === 2 /* FormulaType */ && model.sharedFormula) {
-              // Convert shared formula to regular formula or clear it
-              const formula = cell.formula;
-              if (formula) {
-                cell.value = { formula };
-              } else if (cell.result !== undefined) {
-                cell.value = cell.result;
+            // Access internal _value model for shared formula detection
+            const internalModel = cell._value?.model;
+            if (!internalModel) return;
+
+            const isSharedMaster = internalModel.shareType === 'master';
+            const isSharedClone = internalModel.shareType === 'shared';
+            const hasSharedRef = internalModel.sharedFormula !== undefined;
+
+            if (isSharedMaster || isSharedClone || hasSharedRef) {
+              if (isSharedMaster && internalModel.formula) {
+                // Master cell: keep formula as regular (non-shared) formula
+                cell.value = { formula: internalModel.formula, result: internalModel.result };
+              } else {
+                // Clone cell: has no own formula, use cached result value
+                cell.value = internalModel.result ?? null;
               }
+              converted++;
             }
           } catch {
-            // If we can't process a cell, just clear its formula
-            try {
-              if (cell.value && typeof cell.value === 'object' && 'sharedFormula' in cell.value) {
-                cell.value = cell.result ?? null;
-              }
-            } catch {
-              // Skip cells that can't be processed
-            }
+            // Last resort: force clear the cell's formula
+            try { cell.value = null; } catch { /* skip */ }
           }
         });
       });
     } catch (error) {
-      console.warn('[Node:Render] breakSharedFormulas partial failure:', error instanceof Error ? error.message : error);
+      console.warn('[Node:Render] breakSharedFormulas error:', error instanceof Error ? error.message : error);
     }
+    console.log(`[Node:Render] Converted ${converted} shared formula cells`);
   }
 
   private getCellText(cell: any): string {
