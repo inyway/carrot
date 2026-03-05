@@ -92,6 +92,146 @@ export async function analyzeTemplate(buffer: Buffer): Promise<AnalysisResult> {
   };
 }
 
+// 이메일 컬럼 자동 감지
+function detectEmailColumn(headers: string[], rows: DataRow[]): string | null {
+  const emailPatterns = ['이메일', 'email', 'e-mail', 'e_mail', 'mail'];
+  for (const header of headers) {
+    const normalized = header.replace(/\s+/g, '').toLowerCase();
+    if (emailPatterns.some(p => normalized.includes(p))) {
+      return header;
+    }
+  }
+
+  const sample = rows.slice(0, Math.min(5, rows.length));
+  for (const header of headers) {
+    const emailCount = sample.filter(row => {
+      const val = String(row[header] || '').trim();
+      return val.includes('@') && val.includes('.');
+    }).length;
+    if (emailCount >= Math.ceil(sample.length * 0.5)) {
+      return header;
+    }
+  }
+
+  return null;
+}
+
+// 같은 사람의 여러 행을 1행으로 병합
+// 패턴: 이메일 있는 행(일정) 다음에 이메일 없는 행(출결)이 교대로 나오는 구조
+function mergePairedRows(data: DataRow[], headers: string[]): { rows: DataRow[]; headers: string[] } {
+  if (data.length < 2) return { rows: data, headers };
+
+  const emailCol = detectEmailColumn(headers, data);
+  if (!emailCol) return { rows: data, headers };
+
+  // 그룹핑: 이메일 있는 행 + 뒤따르는 동일/빈 이메일 행을 같은 그룹으로
+  const groups: DataRow[][] = [];
+  let i = 0;
+  while (i < data.length) {
+    const email = String(data[i][emailCol] || '').trim().toLowerCase();
+    if (email) {
+      const group: DataRow[] = [data[i]];
+      while (i + 1 < data.length) {
+        const nextEmail = String(data[i + 1][emailCol] || '').trim().toLowerCase();
+        if (nextEmail === email || !nextEmail) {
+          i++;
+          group.push(data[i]);
+        } else {
+          break;
+        }
+      }
+      groups.push(group);
+    } else {
+      groups.push([data[i]]);
+    }
+    i++;
+  }
+
+  const hasMultiRow = groups.some(g => g.length > 1);
+  if (!hasMultiRow) return { rows: data, headers };
+
+  // 컬럼 분류: same (동일), fill (한쪽만 값), differing (양쪽 다른 값)
+  const sampleGroup = groups.find(g => g.length > 1)!;
+  const sameCols: string[] = [];
+  const fillCols: string[] = [];
+  const differingCols: string[] = [];
+
+  for (const h of headers) {
+    const values = sampleGroup.map(r => String(r[h] ?? '').trim());
+    const nonEmpty = values.filter(v => v);
+    if (new Set(values).size <= 1) {
+      sameCols.push(h);
+    } else if (nonEmpty.length <= 1) {
+      fillCols.push(h);
+    } else {
+      differingCols.push(h);
+    }
+  }
+
+  if (differingCols.length === 0) {
+    const mergedRows: DataRow[] = groups.map(group => {
+      const merged: DataRow = {};
+      for (const col of headers) {
+        merged[col] = group.reduce<DataRow[string]>((acc, row) => {
+          const val = row[col];
+          return (acc === null || acc === undefined || acc === '') ? val : acc;
+        }, null);
+      }
+      return merged;
+    });
+    return { rows: mergedRows, headers };
+  }
+
+  const attendancePattern = /^(Y|N|C|L|O|X|-|출석|결석|지각|공결|중도입과)$/i;
+  function isAttendanceRow(row: DataRow): boolean {
+    let matchCount = 0;
+    let totalCount = 0;
+    for (const col of differingCols) {
+      const val = String(row[col] ?? '').trim();
+      if (val) {
+        totalCount++;
+        if (attendancePattern.test(val)) matchCount++;
+      }
+    }
+    return totalCount > 0 && matchCount / totalCount > 0.5;
+  }
+
+  const rowLabels = sampleGroup.map(row => isAttendanceRow(row) ? '출결' : '일정');
+  const useLabels = new Set(rowLabels).size > 1;
+
+  const baseCols = [...sameCols, ...fillCols];
+  const newHeaders = [...baseCols];
+  for (let idx = 0; idx < sampleGroup.length; idx++) {
+    const suffix = useLabels ? rowLabels[idx] : `${idx + 1}`;
+    for (const col of differingCols) {
+      newHeaders.push(`${col}(${suffix})`);
+    }
+  }
+
+  const mergedRows: DataRow[] = [];
+  for (const group of groups) {
+    const merged: DataRow = {};
+    for (const col of baseCols) {
+      merged[col] = group.reduce<DataRow[string]>((acc, row) => {
+        const val = row[col];
+        return (acc === null || acc === undefined || acc === '') ? val : acc;
+      }, null);
+    }
+    for (let idx = 0; idx < group.length; idx++) {
+      const suffix = useLabels
+        ? (isAttendanceRow(group[idx]) ? '출결' : '일정')
+        : `${idx + 1}`;
+      for (const col of differingCols) {
+        merged[`${col}(${suffix})`] = group[idx][col];
+      }
+    }
+    mergedRows.push(merged);
+  }
+
+  console.log(`[parseDataFile] Merged paired rows by "${emailCol}": ${data.length} → ${mergedRows.length} rows`);
+  return { rows: mergedRows, headers: newHeaders };
+}
+
 // CSV/Excel 데이터 파싱
 export async function parseDataFile(buffer: Buffer, fileName: string): Promise<DataRow[]> {
   const ext = fileName.toLowerCase().split('.').pop();
@@ -103,7 +243,8 @@ export async function parseDataFile(buffer: Buffer, fileName: string): Promise<D
       skipEmptyLines: true,
       dynamicTyping: true,
     });
-    return result.data;
+    const headers = result.meta.fields || [];
+    return mergePairedRows(result.data, headers).rows;
   }
 
   if (ext === 'xlsx' || ext === 'xls') {
@@ -161,7 +302,7 @@ export async function parseDataFile(buffer: Buffer, fileName: string): Promise<D
       data.push(rowData);
     });
 
-    return data;
+    return mergePairedRows(data, headers).rows;
   }
 
   throw new Error('지원하지 않는 파일 형식입니다. CSV 또는 Excel 파일을 사용해주세요.');

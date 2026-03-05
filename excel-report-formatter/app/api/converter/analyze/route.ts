@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
-import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata, findSmartHeaderRow } from '@/lib/cell-value-utils';
+import { cellValueToString, safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata, findSmartHeaderRow, mergePairedRows } from '@/lib/cell-value-utils';
 
 export const runtime = 'nodejs';
 
@@ -100,13 +100,21 @@ async function analyzeExcel(
     }
   });
 
+  // 교대 패턴(이메일 행 + 출결 행) 감지 및 병합
+  const merged = mergePairedRows(preview, columns);
+  const mergedColumns = merged.columns;
+  const mergedPreview = merged.rows;
+  const mergedRowCount = merged.rows.length !== preview.length
+    ? Math.ceil(rowCount * merged.rows.length / preview.length)
+    : rowCount;
+
   return {
     success: true,
     format: 'xlsx',
-    columns,
+    columns: mergedColumns,
     sheets,
-    rowCount,
-    preview,
+    rowCount: mergedRowCount,
+    preview: mergedPreview,
     metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
   };
 }

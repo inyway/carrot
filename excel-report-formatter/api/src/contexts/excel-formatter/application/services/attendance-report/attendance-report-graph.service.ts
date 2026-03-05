@@ -357,7 +357,7 @@ export class AttendanceReportGraphService {
 
         // Skip empty rows — check identity columns for data
         const hasData = identityMappings.some(m => {
-          const colNum = colIndexMap.get(m.dataColumn);
+          const colNum = this.resolveColNum(m.dataColumn, colIndexMap);
           return colNum && this.getCellText(row.getCell(colNum)).length > 0;
         });
         if (!hasData) continue;
@@ -371,7 +371,7 @@ export class AttendanceReportGraphService {
 
         // Identity fields
         for (const m of identityMappings) {
-          const colNum = colIndexMap.get(m.dataColumn);
+          const colNum = this.resolveColNum(m.dataColumn, colIndexMap);
           if (colNum) {
             student.identity[m.templateField] = this.getCellText(row.getCell(colNum));
           }
@@ -382,16 +382,27 @@ export class AttendanceReportGraphService {
           // 2-row pattern: current row has dates, next row has symbols
           const symbolRow = dataSheet.getRow(rowNum + 1);
           for (const m of attendanceMappings) {
-            const colNum = colIndexMap.get(m.dataColumn);
-            if (colNum) {
-              const symbol = this.getCellText(symbolRow.getCell(colNum));
-              student.attendance[m.templateField] = symbol;
+            const colNum = this.resolveColNum(m.dataColumn, colIndexMap);
+            if (!colNum) continue;
+
+            // If mapping has (출결) suffix → read from symbol row (row+1)
+            // If mapping has (일정) suffix → read from date row (current)
+            // If no suffix → use symbol row (backward-compatible)
+            const isMergedAttendance = /\(출결\)$/.test(m.dataColumn);
+            const isMergedSchedule = /\(일정\)$/.test(m.dataColumn);
+
+            if (isMergedSchedule) {
+              // Date/schedule value from current row
+              student.attendance[m.templateField] = this.getCellText(row.getCell(colNum));
+            } else {
+              // Attendance symbol from next row (출결 or default)
+              student.attendance[m.templateField] = this.getCellText(symbolRow.getCell(colNum));
             }
           }
         } else {
           // Single-row pattern: symbol is in the same row
           for (const m of attendanceMappings) {
-            const colNum = colIndexMap.get(m.dataColumn);
+            const colNum = this.resolveColNum(m.dataColumn, colIndexMap);
             if (colNum) {
               student.attendance[m.templateField] = this.getCellText(row.getCell(colNum));
             }
@@ -412,7 +423,7 @@ export class AttendanceReportGraphService {
 
         // Summary (for reference)
         for (const m of summaryMappings) {
-          const colNum = colIndexMap.get(m.dataColumn);
+          const colNum = this.resolveColNum(m.dataColumn, colIndexMap);
           if (colNum) {
             student.rawSummary[m.templateField] = this.getCellText(row.getCell(colNum));
           }
@@ -901,46 +912,85 @@ export class AttendanceReportGraphService {
    * 2-row-per-student 패턴 감지 — 복수 컬럼 majority vote
    * 단일 컬럼이 아닌 여러 출결 컬럼에서 패턴을 확인하여 신뢰도 향상
    */
+  /**
+   * Strip (출결) / (일정) / (1) / (2) suffixes from merged column names
+   * to recover the original column name for colIndexMap lookup.
+   */
+  private stripMergedSuffix(colName: string): string {
+    return colName.replace(/\((출결|일정|\d+)\)$/, '').trim();
+  }
+
+  /**
+   * Resolve column number from colIndexMap, trying both the original name
+   * and the name with merged suffix stripped.
+   */
+  private resolveColNum(colName: string, colIndexMap: Map<string, number>): number | undefined {
+    return colIndexMap.get(colName) ?? colIndexMap.get(this.stripMergedSuffix(colName));
+  }
+
   private detect2RowPatternMajority(
     sheet: any,
     dataStartRow: number,
     attendanceMappings: AttendanceMappingResult[],
     colIndexMap: Map<string, number>,
   ): boolean {
-    if (attendanceMappings.length === 0) return false;
-
     const row1 = sheet.getRow(dataStartRow);
     const row2 = sheet.getRow(dataStartRow + 1);
     if (!row1 || !row2) return false;
 
-    // Sample up to 10 attendance columns
-    const sampled = attendanceMappings.slice(0, 10);
-    let dateSymbolVotes = 0;
-    let totalVotes = 0;
+    // Strategy 1: Use attendance mappings (strip merged suffixes for lookup)
+    if (attendanceMappings.length > 0) {
+      const sampled = attendanceMappings.slice(0, 10);
+      let dateSymbolVotes = 0;
+      let totalVotes = 0;
 
-    for (const m of sampled) {
-      const colNum = colIndexMap.get(m.dataColumn);
-      if (!colNum) continue;
+      for (const m of sampled) {
+        const colNum = this.resolveColNum(m.dataColumn, colIndexMap);
+        if (!colNum) continue;
 
-      const val1 = this.getCellText(row1.getCell(colNum));
-      const val2 = this.getCellText(row2.getCell(colNum));
+        const val1 = this.getCellText(row1.getCell(colNum));
+        const val2 = this.getCellText(row2.getCell(colNum));
 
-      if (!val1 && !val2) continue; // Both empty → skip
-      totalVotes++;
+        if (!val1 && !val2) continue;
+        totalVotes++;
 
-      // 2-row pattern indicators:
-      // Row 1: date-like ("02(Tu)", "15", "3월") or empty
-      // Row 2: attendance symbol ("Y", "N", "BZ", "VA", "L", "C")
-      const isRow1DateLike = /^\d{1,2}\s*\(/.test(val1) || /^\d{1,2}$/.test(val1) || val1 === '';
-      const isRow2Symbol = /^[A-Z]{1,3}$/i.test(val2);
+        const isRow1DateLike = /^\d{1,2}\s*\(/.test(val1) || /^\d{1,2}$/.test(val1) || val1 === '';
+        const isRow2Symbol = /^[A-Z]{1,3}$/i.test(val2);
 
-      if (isRow1DateLike && isRow2Symbol) {
-        dateSymbolVotes++;
+        if (isRow1DateLike && isRow2Symbol) {
+          dateSymbolVotes++;
+        }
+      }
+
+      if (totalVotes > 0 && dateSymbolVotes / totalVotes > 0.5) {
+        return true;
       }
     }
 
-    // Majority vote: >50% of sampled columns show date-symbol pattern
-    return totalVotes > 0 && dateSymbolVotes / totalVotes > 0.5;
+    // Strategy 2: Fallback — scan all columns in the sheet directly
+    // Look for date-like values in row1 and attendance symbols in row2
+    let dateSymbolVotes = 0;
+    let totalVotes = 0;
+    const colCount = Math.min(sheet.columnCount || 50, 50);
+
+    for (let col = 1; col <= colCount; col++) {
+      const val1 = this.getCellText(row1.getCell(col));
+      const val2 = this.getCellText(row2.getCell(col));
+
+      if (!val1 && !val2) continue;
+
+      const isRow1DateLike = /^\d{1,2}\s*\(/.test(val1) || /^\d{1,2}$/.test(val1);
+      const isRow2Symbol = /^(Y|N|C|L|O|X|BZ|VA|-)$/i.test(val2);
+
+      if (isRow1DateLike || isRow2Symbol) {
+        totalVotes++;
+        if (isRow1DateLike && isRow2Symbol) {
+          dateSymbolVotes++;
+        }
+      }
+    }
+
+    return totalVotes >= 3 && dateSymbolVotes / totalVotes > 0.5;
   }
 
   /** 데이터 컬럼에서 클래스명 컬럼 찾기 */

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as ExcelJS from 'exceljs';
-import { safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata, findSmartHeaderRow } from '@/lib/cell-value-utils';
+import { safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata, findSmartHeaderRow, mergePairedRows } from '@/lib/cell-value-utils';
 
 export const runtime = 'nodejs';
 
@@ -58,7 +58,9 @@ async function extractExcelData(
     }
   });
 
-  return { columns, data };
+  // 교대 패턴(이메일 행 + 출결 행) 감지 및 병합
+  const merged = mergePairedRows(data, columns);
+  return { columns: merged.columns, data: merged.rows };
 }
 
 // CSV 데이터 추출
