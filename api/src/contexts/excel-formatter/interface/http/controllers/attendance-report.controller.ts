@@ -62,8 +62,23 @@ export class AttendanceReportController {
     const dataBuffer = files.data[0].buffer;
     const companyId = dto.companyId || 'default';
 
+    // Parse precomputed mappings from frontend (JSON string)
+    let precomputedMappings: Array<{ templateField: string; dataColumn: string }> = [];
+    if (dto.mappings) {
+      try {
+        const parsed = JSON.parse(dto.mappings);
+        if (Array.isArray(parsed)) {
+          precomputedMappings = parsed.filter(
+            (m: any) => m.templateField && m.dataColumn,
+          );
+        }
+      } catch {
+        console.warn('[AttendanceReport] Failed to parse mappings, will use AI mapping');
+      }
+    }
+
     console.log('[AttendanceReport] Generating report synchronously...',
-      { companyId, sheetName: dto.sheetName });
+      { companyId, sheetName: dto.sheetName, dataSheet: dto.dataSheet, precomputedMappings: precomputedMappings.length });
 
     try {
       const result = await this.graphService.execute(
@@ -71,6 +86,11 @@ export class AttendanceReportController {
         dataBuffer,
         companyId,
         dto.sheetName,
+        undefined, // onProgress
+        {
+          dataSheetName: dto.dataSheet,
+          precomputedMappings,
+        },
       );
 
       console.log(`[AttendanceReport] Done: ${result.studentCount} students, ${result.mappedCount} mappings`);

@@ -42,12 +42,20 @@ export class AttendanceReportGraphService {
     companyId: string,
     sheetName?: string,
     onProgress?: (info: ProgressInfo) => void,
+    options?: {
+      dataSheetName?: string;
+      precomputedMappings?: Array<{ templateField: string; dataColumn: string }>;
+    },
   ): Promise<{
     outputBuffer: Buffer;
     studentCount: number;
     mappedCount: number;
   }> {
-    console.log('[AttendanceGraph] Starting pipeline...');
+    console.log('[AttendanceGraph] Starting pipeline...', {
+      sheetName,
+      dataSheetName: options?.dataSheetName,
+      precomputedMappings: options?.precomputedMappings?.length ?? 0,
+    });
 
     // Lazy import to avoid loading LangGraph at server startup
     const { Annotation, StateGraph } = await import('@langchain/langgraph');
@@ -57,6 +65,8 @@ export class AttendanceReportGraphService {
       templateBuffer: Annotation<Buffer>,
       companyId: Annotation<string>,
       sheetName: Annotation<string | undefined>,
+      dataSheetName: Annotation<string | undefined>,
+      precomputedMappings: Annotation<Array<{ templateField: string; dataColumn: string }>>,
       templateColumns: Annotation<string[]>,
       dataColumns: Annotation<string[]>,
       templateSampleData: Annotation<Record<string, unknown>[]>,
@@ -117,6 +127,8 @@ export class AttendanceReportGraphService {
       templateBuffer: templateBuffer,
       companyId,
       sheetName,
+      dataSheetName: options?.dataSheetName,
+      precomputedMappings: options?.precomputedMappings || [],
       templateColumns: [],
       dataColumns: [],
       templateSampleData: [],
@@ -160,20 +172,23 @@ export class AttendanceReportGraphService {
       // --- Parse template file ---
       const templateWorkbook = new ExcelJS.default.Workbook();
       await templateWorkbook.xlsx.load(state.templateBuffer as unknown as ArrayBuffer);
-      const templateSheet = templateWorkbook.worksheets[0];
-      if (!templateSheet) throw new Error('템플릿 파일에 시트가 없습니다.');
+      const templateSheetName = state.sheetName;
+      const templateSheet = templateSheetName
+        ? templateWorkbook.getWorksheet(templateSheetName)
+        : templateWorkbook.worksheets[0];
+      if (!templateSheet) throw new Error(`템플릿 파일에서 시트를 찾을 수 없습니다: ${templateSheetName || '(첫 번째 시트)'}`);
 
       const templateColumns = this.extractColumns(templateSheet);
       const templateSampleData = this.extractSampleData(templateSheet, templateColumns, 2);
 
-      // --- Parse data file ---
+      // --- Parse data file (use dataSheetName, NOT sheetName) ---
       const dataWorkbook = new ExcelJS.default.Workbook();
       await dataWorkbook.xlsx.load(state.rawDataBuffer as unknown as ArrayBuffer);
-      const targetSheetName = state.sheetName;
-      const dataSheet = targetSheetName
-        ? dataWorkbook.getWorksheet(targetSheetName)
+      const dataSheetTarget = state.dataSheetName;
+      const dataSheet = dataSheetTarget
+        ? dataWorkbook.getWorksheet(dataSheetTarget)
         : dataWorkbook.worksheets[0];
-      if (!dataSheet) throw new Error(`데이터 파일에서 시트를 찾을 수 없습니다: ${targetSheetName || '(첫 번째 시트)'}`);
+      if (!dataSheet) throw new Error(`데이터 파일에서 시트를 찾을 수 없습니다: ${dataSheetTarget || '(첫 번째 시트)'}`);
 
       // Smart header detection (from hwpx-mapping-graph.service.ts pattern)
       const { columns: dataColumns, headerRowNum } = this.detectSmartHeader(dataSheet);
@@ -207,6 +222,30 @@ export class AttendanceReportGraphService {
   // ==========================================
   private async nodeMap(state: any): Promise<Partial<any>> {
     console.log('[Node:Map] Mapping columns...');
+
+    // If precomputed mappings from frontend exist, use them directly (skip AI)
+    if (state.precomputedMappings?.length > 0) {
+      console.log(`[Node:Map] Using ${state.precomputedMappings.length} precomputed mappings from frontend`);
+      const mappings: AttendanceMappingResult[] = state.precomputedMappings.map(
+        (m: { templateField: string; dataColumn: string }) => ({
+          templateField: m.templateField,
+          dataColumn: m.dataColumn,
+          confidence: 1.0,
+          method: 'precomputed' as const,
+        }),
+      );
+      const mappedTemplateFields = new Set(mappings.map((m: AttendanceMappingResult) => m.templateField));
+      const unmappedColumns = (state.templateColumns || []).filter(
+        (c: string) => !mappedTemplateFields.has(c),
+      );
+      console.log(`[Node:Map] Precomputed: ${mappings.length} mapped, ${unmappedColumns.length} unmapped`);
+      return {
+        mappings,
+        unmappedColumns,
+        progress: PIPELINE_PROGRESS.MAP.end,
+        currentStep: 'map_done',
+      };
+    }
 
     if (!state.templateColumns?.length || !state.dataColumns?.length) {
       return {
@@ -261,8 +300,8 @@ export class AttendanceReportGraphService {
       const ExcelJS = await import('exceljs');
       const dataWorkbook = new ExcelJS.default.Workbook();
       await dataWorkbook.xlsx.load(state.rawDataBuffer as unknown as ArrayBuffer);
-      const dataSheet = state.sheetName
-        ? dataWorkbook.getWorksheet(state.sheetName)
+      const dataSheet = state.dataSheetName
+        ? dataWorkbook.getWorksheet(state.dataSheetName)
         : dataWorkbook.worksheets[0];
       if (!dataSheet) throw new Error('데이터 시트를 찾을 수 없습니다.');
 
