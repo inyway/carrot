@@ -422,19 +422,21 @@ export class ExceljsParserAdapter implements ExcelParserPort {
 
         // Deduplicate shared formulas (only keep the first instance)
         const formulaKey = cell.formula;
-        if (seenFormulas.has(formulaKey) && cell.sharedFormula) return;
+        const cellAny = cell as unknown as Record<string, unknown>;
+        const hasSharedFormula = !!cellAny.sharedFormula;
+        if (seenFormulas.has(formulaKey) && hasSharedFormula) return;
         seenFormulas.add(formulaKey);
 
         let formulaType = FormulaType.STANDARD;
         let sharedRef: string | undefined;
 
-        if (cell.sharedFormula) {
+        if (hasSharedFormula) {
           formulaType = FormulaType.SHARED;
-          sharedRef = cell.sharedFormula;
+          sharedRef = cellAny.sharedFormula as string;
         }
 
         // Check for array formula via model
-        const cellModel = cell.model as Record<string, unknown> | undefined;
+        const cellModel = (cell as unknown as Record<string, unknown>).model as Record<string, unknown> | undefined;
         if (cellModel?.shareType === 'array') {
           formulaType = FormulaType.ARRAY;
         }
@@ -566,9 +568,7 @@ export class ExceljsParserAdapter implements ExcelParserPort {
     // Check types
     const typeDistribution = { number: 0, string: 0, date: 0, boolean: 0 };
     for (const val of nonNull) {
-      if (val instanceof Date) {
-        typeDistribution.date++;
-      } else if (typeof val === 'number') {
+      if (typeof val === 'number') {
         typeDistribution.number++;
       } else if (typeof val === 'boolean') {
         typeDistribution.boolean++;
