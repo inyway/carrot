@@ -18,19 +18,30 @@ interface ParsedData {
 // 이메일 컬럼 자동 감지
 function detectEmailColumn(headers: string[], rows: DataRow[]): string | null {
   const emailPatterns = ['이메일', 'email', 'e-mail', 'e_mail', 'mail'];
+  // 1. 헤더 이름으로 감지
   for (const header of headers) {
     const normalized = header.replace(/\s+/g, '').toLowerCase();
     if (emailPatterns.some(p => normalized.includes(p))) {
       return header;
     }
   }
-  const sample = rows.slice(0, Math.min(5, rows.length));
+  // 2. 첫 번째 데이터 행 값이 이메일 패턴 헤더명인 경우 (멀티로우 헤더)
+  if (rows.length > 0) {
+    for (const header of headers) {
+      const val = String(rows[0][header] || '').replace(/\s+/g, '').toLowerCase();
+      if (emailPatterns.some(p => val.includes(p))) {
+        return header;
+      }
+    }
+  }
+  // 3. 셀 값에 이메일 주소가 있는 컬럼 (2행 교대 패턴 고려: 짝수 행만 이메일일 수 있음)
+  const sample = rows.slice(0, Math.min(10, rows.length));
   for (const header of headers) {
     const emailCount = sample.filter(row => {
       const val = String(row[header] || '').trim();
       return val.includes('@') && val.includes('.');
     }).length;
-    if (emailCount >= Math.ceil(sample.length * 0.5)) {
+    if (emailCount >= Math.ceil(sample.length * 0.3)) {
       return header;
     }
   }
