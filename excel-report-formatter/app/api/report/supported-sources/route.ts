@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
     const response = await fetch(`${API_BASE_URL}/api/report/supported-sources`, {
       method: 'GET',
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
       },

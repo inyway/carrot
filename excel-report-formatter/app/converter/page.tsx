@@ -126,6 +126,31 @@ const detectFormat = (fileName: string): string => {
   }
 };
 
+const dedupeMappings = (items: MappingItem[]): MappingItem[] => {
+  const bestByTemplateField = new Map<string, MappingItem>();
+
+  for (const item of items) {
+    if (!item.templateField) {
+      continue;
+    }
+
+    const existing = bestByTemplateField.get(item.templateField);
+    if (!existing) {
+      bestByTemplateField.set(item.templateField, item);
+      continue;
+    }
+
+    const existingScore = (existing.confidence || 0) + (existing.isMetadata ? 1 : 0) + (existing.dataColumn ? 0.5 : 0);
+    const nextScore = (item.confidence || 0) + (item.isMetadata ? 1 : 0) + (item.dataColumn ? 0.5 : 0);
+
+    if (nextScore > existingScore) {
+      bestByTemplateField.set(item.templateField, item);
+    }
+  }
+
+  return Array.from(bestByTemplateField.values());
+};
+
 export default function ConverterPage() {
   const { user, loading: authLoading, signOut } = useAuth();
   const router = useRouter();
@@ -557,7 +582,7 @@ export default function ConverterPage() {
                 .filter(f => !mappedFields.has(f))
                 .map(f => ({ templateField: f, dataColumn: '', confidence: 0 }));
 
-              setMappings([...aiMappings, ...unmappedEntries]);
+              setMappings(dedupeMappings([...aiMappings, ...unmappedEntries]));
             } else {
               throw new Error('AI mapping returned no results');
             }
@@ -582,7 +607,7 @@ export default function ConverterPage() {
               confidence: exactMatch ? 1.0 : partialMatch ? 0.7 : 0,
             };
           });
-          setMappings(newMappings);
+          setMappings(dedupeMappings(newMappings));
         }
       }
     } catch (error) {

@@ -19,6 +19,8 @@ interface MappingResult {
   metadataValue?: string;
 }
 
+const ATTENDANCE_VALUE_PATTERN = /^(Y|N|C|L|O|X|-|BZ|VA|출석|결석|지각|공결|중도입과)$/i;
+
 // --- Column normalization helpers ---
 
 /** Normalize column name: replace newlines with spaces, strip trailing dots, trim */
@@ -204,6 +206,11 @@ function extractDayFromSampleValue(value: unknown): number | null {
   return match ? parseInt(match[1], 10) : null;
 }
 
+function isAttendanceValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  return ATTENDANCE_VALUE_PATTERN.test(String(value).trim());
+}
+
 /**
  * Extract embedded field values from class name string.
  * Typical format: "쿠팡 25-4학기_Biz Conversation_Intermediate3_Mon/Wed 10:00-11:00_Group"
@@ -315,14 +322,32 @@ function dateBasedAttendanceMapping(
       const dateKey = `${month}-${day}`;
       const matchedTemplateCol = templateDateMap.get(dateKey);
       if (matchedTemplateCol) {
-        // If this is a (일정) column with a paired (출결) column,
-        // map the (출결) column instead (template expects Y/N, not dates)
-        const actualDataCol = scheduleToAttendance.get(dataCol) || dataCol;
+        if (usedTemplateCols.has(matchedTemplateCol)) {
+          continue;
+        }
+
+        // If this is a schedule column with a paired attendance column,
+        // always map the attendance column. Without a paired attendance
+        // column, a date-like schedule column is not useful for the report.
+        let actualDataCol = scheduleToAttendance.get(dataCol);
+        if (!actualDataCol) {
+          const sampleValues = (dataSampleData || [])
+            .map(row => row[dataCol])
+            .filter(value => value !== undefined && value !== null);
+          const hasDateLikeSample = sampleValues.some(value => extractDayFromSampleValue(value) !== null);
+          const hasAttendanceLikeSample = sampleValues.some(value => isAttendanceValue(value));
+
+          if (hasDateLikeSample && !hasAttendanceLikeSample) {
+            continue;
+          }
+
+          actualDataCol = dataCol;
+        }
 
         results.push({
           templateField: matchedTemplateCol,
           dataColumn: actualDataCol,
-          confidence: usedTemplateCols.has(matchedTemplateCol) ? 0.85 : 0.95,
+          confidence: 0.95,
           reason: `날짜 매칭 (${month}월 ${day}일)`,
         });
         usedTemplateCols.add(matchedTemplateCol);
@@ -1051,6 +1076,43 @@ function isAttendanceReport(templateColumns: string[], dataColumns: string[]): b
   return templateAttendance.length >= 3 && dataAttendance.length >= 3;
 }
 
+function mappingPriority(mapping: MappingResult): number {
+  let score = Math.round((mapping.confidence || 0) * 100);
+
+  if (mapping.isMetadata) score += 50;
+  if (mapping.reason.includes('정확 일치')) score += 40;
+  if (mapping.reason.includes('메타데이터 매칭')) score += 35;
+  if (mapping.reason.includes('클래스명에서 추출')) score += 30;
+  if (mapping.reason.includes('필드맵 매칭')) score += 20;
+  if (mapping.reason.includes('날짜 매칭')) score += 20;
+  if (mapping.reason.includes('출결 요약')) score += 15;
+  if (mapping.reason.includes('부분 일치')) score += 5;
+
+  return score;
+}
+
+function dedupeMappings(mappings: MappingResult[]): MappingResult[] {
+  const bestByTemplateField = new Map<string, MappingResult>();
+
+  for (const mapping of mappings) {
+    if (!mapping.templateField || !mapping.dataColumn) {
+      continue;
+    }
+
+    const existing = bestByTemplateField.get(mapping.templateField);
+    if (!existing) {
+      bestByTemplateField.set(mapping.templateField, mapping);
+      continue;
+    }
+
+    if (mappingPriority(mapping) > mappingPriority(existing)) {
+      bestByTemplateField.set(mapping.templateField, mapping);
+    }
+  }
+
+  return Array.from(bestByTemplateField.values());
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: MappingRequest = await request.json();
@@ -1081,7 +1143,10 @@ export async function POST(request: NextRequest) {
       const geminiApiKey = process.env.GEMINI_API_KEY;
       const mappedTemplates = new Set(mappings.map(m => m.templateField));
       const unmappedTemplates = templateColumns.filter(t =>
-        !mappedTemplates.has(t) && !isAttendanceColumn(t) && !isSummaryColumn(t)
+        !mappedTemplates.has(t) &&
+        !isAttendanceColumn(t) &&
+        !isSummaryColumn(t) &&
+        normalizeColName(t) !== '비고'
       );
 
       if (unmappedTemplates.length > 0 && geminiApiKey) {
@@ -1139,6 +1204,8 @@ export async function POST(request: NextRequest) {
         console.log(`[ai-mapping] Fallback rule mapping: ${mappings.length} mappings`);
       }
     }
+
+    mappings = dedupeMappings(mappings);
 
     return NextResponse.json({
       success: true,
