@@ -11,6 +11,51 @@ interface MappingItem {
   metadataValue?: string;
 }
 
+function resetWorksheetView(worksheet: ExcelJS.Worksheet) {
+  const focusCell = 'A1';
+  const currentView = worksheet.views?.[0];
+
+  if (currentView) {
+    worksheet.views = [{
+      ...currentView,
+      activeCell: focusCell,
+      topLeftCell: focusCell,
+    }];
+    return;
+  }
+
+  worksheet.views = [{
+    state: 'normal',
+    activeCell: focusCell,
+    showGridLines: true,
+    showRowColHeaders: true,
+  }];
+}
+
+function resetWorkbookView(workbook: ExcelJS.Workbook, activeSheetIndex: number) {
+  const normalizedIndex = Math.max(0, activeSheetIndex);
+  const currentView = workbook.views?.[0];
+
+  if (currentView) {
+    workbook.views = [{
+      ...currentView,
+      activeTab: normalizedIndex,
+      firstSheet: normalizedIndex,
+    }];
+    return;
+  }
+
+  workbook.views = [{
+    x: 0,
+    y: 0,
+    width: 16000,
+    height: 9000,
+    visibility: 'visible',
+    firstSheet: normalizedIndex,
+    activeTab: normalizedIndex,
+  }];
+}
+
 // Excel 데이터 추출 (multi-row 헤더 지원)
 async function extractExcelData(
   buffer: Buffer,
@@ -313,6 +358,10 @@ async function generateExcelReports(
       targetRow.commit();
     }
   }
+
+  const activeSheetIndex = Math.max(0, workbook.worksheets.findIndex(sheet => sheet.id === ws.id));
+  resetWorksheetView(ws);
+  resetWorkbookView(workbook, activeSheetIndex);
 
   // 단일 .xlsx 반환
   const buffer = await workbook.xlsx.writeBuffer();
