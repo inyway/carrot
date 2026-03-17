@@ -86,25 +86,40 @@ function mergePairedRows(
   const hasMultiRow = groups.some(g => g.length > 1);
   if (!hasMultiRow) return { rows, headers };
 
-  // 컬럼 분류 (첫 번째 멀티 그룹 기준)
-  // - sameCols: 모든 행에서 같은 값 (그대로 유지)
-  // - fillCols: 한 행만 값 있고 나머지 null → 비null 값 사용
-  // - differingCols: 모든 행에 서로 다른 값 → 접미사 붙여서 분리
-  const sampleGroup = groups.find(g => g.length > 1)!;
+  // 컬럼 분류: 전체 멀티 그룹 기준
+  // 앞 학생에게 비어 있는 후반 회차 컬럼도, 뒤 학생에서 일정/출결 쌍이 보이면
+  // differingCols로 승격시켜 "(출결)" 옵션이 유지되도록 한다.
+  const multiRowGroups = groups.filter(g => g.length > 1);
   const sameCols: string[] = [];
   const fillCols: string[] = [];
   const differingCols: string[] = [];
 
   for (const h of headers) {
-    const values = sampleGroup.map(r => String(r[h] ?? '').trim());
-    const nonEmpty = values.filter(v => v);
-    if (new Set(values).size <= 1) {
-      sameCols.push(h);
-    } else if (nonEmpty.length <= 1) {
+    let hasDiffering = false;
+    let hasFill = false;
+
+    for (const group of multiRowGroups) {
+      const values = group.map(r => String(r[h] ?? '').trim());
+      const nonEmpty = values.filter(v => v);
+      const uniqueNonEmpty = Array.from(new Set(nonEmpty));
+
+      if (uniqueNonEmpty.length >= 2) {
+        hasDiffering = true;
+        break;
+      }
+
+      if (nonEmpty.length === 1) {
+        hasFill = true;
+      }
+    }
+
+    if (hasDiffering) {
+      differingCols.push(h);
+    } else if (hasFill) {
       // 한 행만 값이 있고 나머지는 빈값 → fill 컬럼
       fillCols.push(h);
     } else {
-      differingCols.push(h);
+      sameCols.push(h);
     }
   }
 
@@ -139,6 +154,15 @@ function mergePairedRows(
   }
 
   // 행 타입 라벨 결정
+  const sampleGroup = multiRowGroups
+    .map(group => ({
+      group,
+      score: differingCols.reduce((count, col) => {
+        return count + (group.some(row => String(row[col] ?? '').trim().length > 0) ? 1 : 0);
+      }, 0),
+    }))
+    .sort((a, b) => b.score - a.score || b.group.length - a.group.length)[0]?.group || multiRowGroups[0];
+
   const rowLabels = sampleGroup.map(row => isAttendanceRow(row) ? '출결' : '일정');
   const useLabels = new Set(rowLabels).size > 1;
 

@@ -383,20 +383,39 @@ export function mergePairedRows(
   if (!groups.some(g => g.length > 1)) return { rows: data, columns };
 
   // 컬럼 분류
-  const sampleGroup = groups.find(g => g.length > 1)!;
+  // 첫 학생 그룹만 기준으로 잡으면, 앞 학생에게 비어 있는 후반 회차 컬럼이
+  // same/fill로 굳어져 "(출결)" suffix가 사라질 수 있다.
+  // 전체 멀티행 그룹을 훑어 한 번이라도 일정/출결 쌍이 관측된 컬럼은 differing으로 분류한다.
+  const multiRowGroups = groups.filter(g => g.length > 1);
   const sameCols: string[] = [];
   const fillCols: string[] = [];
   const differingCols: string[] = [];
 
   for (const h of columns) {
-    const values = sampleGroup.map(r => String(r[h] ?? '').trim());
-    const nonEmpty = values.filter(v => v);
-    if (new Set(values).size <= 1) {
-      sameCols.push(h);
-    } else if (nonEmpty.length <= 1) {
+    let hasDiffering = false;
+    let hasFill = false;
+
+    for (const group of multiRowGroups) {
+      const values = group.map(r => String(r[h] ?? '').trim());
+      const nonEmpty = values.filter(v => v);
+      const uniqueNonEmpty = Array.from(new Set(nonEmpty));
+
+      if (uniqueNonEmpty.length >= 2) {
+        hasDiffering = true;
+        break;
+      }
+
+      if (nonEmpty.length === 1) {
+        hasFill = true;
+      }
+    }
+
+    if (hasDiffering) {
+      differingCols.push(h);
+    } else if (hasFill) {
       fillCols.push(h);
     } else {
-      differingCols.push(h);
+      sameCols.push(h);
     }
   }
 
@@ -424,6 +443,15 @@ export function mergePairedRows(
     }
     return tc > 0 && mc / tc > 0.5;
   };
+
+  const sampleGroup = multiRowGroups
+    .map(group => ({
+      group,
+      score: differingCols.reduce((count, col) => {
+        return count + (group.some(row => String(row[col] ?? '').trim().length > 0) ? 1 : 0);
+      }, 0),
+    }))
+    .sort((a, b) => b.score - a.score || b.group.length - a.group.length)[0]?.group || multiRowGroups[0];
 
   const rowLabels = sampleGroup.map(r => isAttendanceRow(r) ? '출결' : '일정');
   const useLabels = new Set(rowLabels).size > 1;
