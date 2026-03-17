@@ -11,6 +11,10 @@ interface MappingItem {
   metadataValue?: string;
 }
 
+function isBlankCellValue(value: unknown): boolean {
+  return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+}
+
 function resetWorksheetView(worksheet: ExcelJS.Worksheet) {
   const focusCell = 'A1';
   const currentView = worksheet.views?.[0];
@@ -94,7 +98,7 @@ async function extractExcelData(
         hasData = true;
         rowData[name] = extracted;
       } else {
-        rowData[name] = '';
+        rowData[name] = null;
       }
     }
 
@@ -124,7 +128,7 @@ function extractCsvData(buffer: Buffer): { columns: string[]; data: Record<strin
     const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
     const row: Record<string, unknown> = {};
     columns.forEach((col, idx) => {
-      row[col] = values[idx] || '';
+      row[col] = values[idx] ? values[idx] : null;
     });
     data.push(row);
   }
@@ -307,7 +311,7 @@ async function generateExcelReports(
       // Check if this is a metadata constant mapping
       const metadataValue = metadataMappings.get(templateField);
       if (metadataValue !== undefined) {
-        cell.value = metadataValue;
+        cell.value = isBlankCellValue(metadataValue) ? null : metadataValue;
         const style = styleCache.get(colIndex);
         if (style) {
           cell.style = style as ExcelJS.Style;
@@ -315,12 +319,16 @@ async function generateExcelReports(
       } else if (rowData[dataColumn] !== undefined) {
         const value = rowData[dataColumn];
 
-        if (value instanceof Date) {
+        if (isBlankCellValue(value)) {
+          cell.value = null;
+        } else if (value instanceof Date) {
           cell.value = value;
         } else if (typeof value === 'number') {
           cell.value = value;
+        } else if (typeof value === 'boolean') {
+          cell.value = value;
         } else {
-          cell.value = String(value ?? '');
+          cell.value = String(value);
         }
 
         // 첫 데이터 행의 스타일 적용
