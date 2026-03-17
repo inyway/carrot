@@ -11,8 +11,173 @@ interface MappingItem {
   metadataValue?: string;
 }
 
+type SummaryFormulaKey =
+  | 'totalSessions'
+  | 'attended'
+  | 'absent'
+  | 'excused'
+  | 'realAttendanceRate'
+  | 'attendanceRate';
+
+interface ParsedDate {
+  month?: number;
+  day?: number;
+}
+
 function isBlankCellValue(value: unknown): boolean {
   return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+}
+
+function normalizeColName(name: string): string {
+  return name.replace(/\n/g, ' ').replace(/\.+$/, '').trim();
+}
+
+function isAttendanceColumn(colName: string): boolean {
+  const normalized = normalizeColName(colName);
+  if (/출결|출석률|결석|합계|비고|미참석|출석\s*\(|공결/i.test(normalized)) return false;
+  if (/(?<!\d)회차\s*$/i.test(normalized)) return false;
+  return /\d+\s*(week|월|회차)/i.test(normalized);
+}
+
+function isSummaryColumn(colName: string): boolean {
+  const normalized = normalizeColName(colName);
+  if (/출석\s*\(|결석\s*\(|지각\s*\(|출석률|실\s*출석률|BZ|공결|미참석|업무/i.test(normalized)) return true;
+  if (/(?<!\d)회차\s*$/i.test(normalized)) return true;
+  return false;
+}
+
+function extractDatesFromTemplateCol(colName: string): ParsedDate[] {
+  const dates: ParsedDate[] = [];
+  const regex = /(\d{1,2})월\s*(\d{1,2})일/g;
+  let match;
+  while ((match = regex.exec(colName)) !== null) {
+    dates.push({ month: parseInt(match[1], 10), day: parseInt(match[2], 10) });
+  }
+  return dates;
+}
+
+function extractMonthFromDataCol(colName: string): number | null {
+  const match = colName.match(/(\d{1,2})월/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+function extractDayFromSampleValue(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  const match = str.match(/^(\d{1,2})\s*\(/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+function columnNumberToName(columnNumber: number): string {
+  let result = '';
+  let current = columnNumber;
+  while (current > 0) {
+    const remainder = (current - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    current = Math.floor((current - 1) / 26);
+  }
+  return result;
+}
+
+function buildRowAttendanceMap(
+  rowData: Record<string, unknown>,
+  dataColumns: string[],
+): Map<string, unknown> {
+  const attendanceMap = new Map<string, unknown>();
+  const pairMap = new Map<string, { schedule?: string; attendance?: string }>();
+
+  for (const col of dataColumns) {
+    const scheduleMatch = col.match(/^(.*)\(일정\)$/);
+    const attendanceMatch = col.match(/^(.*)\(출결\)$/);
+
+    if (scheduleMatch) {
+      const base = scheduleMatch[1].trim();
+      pairMap.set(base, { ...(pairMap.get(base) || {}), schedule: col });
+    }
+
+    if (attendanceMatch) {
+      const base = attendanceMatch[1].trim();
+      pairMap.set(base, { ...(pairMap.get(base) || {}), attendance: col });
+    }
+  }
+
+  for (const [base, pair] of Array.from(pairMap.entries())) {
+    if (!pair.schedule || !pair.attendance) continue;
+
+    const month = extractMonthFromDataCol(base);
+    const day = extractDayFromSampleValue(rowData[pair.schedule]);
+    if (!month || day === null) continue;
+
+    attendanceMap.set(`${month}-${day}`, rowData[pair.attendance] ?? null);
+  }
+
+  return attendanceMap;
+}
+
+function resolveAttendanceSymbolForTemplateField(
+  templateField: string,
+  rowAttendanceMap: Map<string, unknown>,
+  fallbackValue: unknown,
+): unknown {
+  const dates = extractDatesFromTemplateCol(templateField);
+
+  for (const date of dates) {
+    if (!date.month || !date.day) continue;
+    const key = `${date.month}-${date.day}`;
+    if (rowAttendanceMap.has(key)) {
+      return rowAttendanceMap.get(key) ?? null;
+    }
+  }
+
+  return fallbackValue;
+}
+
+function buildSummaryFormulaMap(templateColumns: string[]): Map<string, SummaryFormulaKey> {
+  const result = new Map<string, SummaryFormulaKey>();
+
+  for (const col of templateColumns) {
+    if (!isSummaryColumn(col)) continue;
+
+    const normalized = normalizeColName(col).toLowerCase();
+    if (normalized.includes('출석') && normalized.includes('률')) {
+      result.set(col, normalized.includes('실') ? 'realAttendanceRate' : 'attendanceRate');
+    } else if (normalized.includes('결석') || normalized.includes('(n') || normalized.includes(',c')) {
+      result.set(col, 'absent');
+    } else if (normalized.includes('공결') || normalized.includes('bz')) {
+      result.set(col, 'excused');
+    } else if (normalized.includes('회차')) {
+      result.set(col, 'totalSessions');
+    } else if (normalized.includes('출석') || normalized.includes('(y')) {
+      result.set(col, 'attended');
+    }
+  }
+
+  return result;
+}
+
+function buildSummaryFormula(
+  formulaKey: SummaryFormulaKey,
+  attendanceRange: string,
+): ExcelJS.CellFormulaValue {
+  const attendedFormula = `COUNTIF(${attendanceRange},"Y")+COUNTIF(${attendanceRange},"L")`;
+  const absentFormula = `COUNTIF(${attendanceRange},"N")+COUNTIF(${attendanceRange},"C")`;
+  const excusedFormula = `COUNTIF(${attendanceRange},"BZ")+COUNTIF(${attendanceRange},"VA")`;
+  const totalFormula = `COUNTA(${attendanceRange})`;
+
+  switch (formulaKey) {
+    case 'totalSessions':
+      return { formula: totalFormula };
+    case 'attended':
+      return { formula: attendedFormula };
+    case 'absent':
+      return { formula: absentFormula };
+    case 'excused':
+      return { formula: excusedFormula };
+    case 'realAttendanceRate':
+      return { formula: `IF(${totalFormula}>0,(${attendedFormula})/${totalFormula}*100,0)` };
+    case 'attendanceRate':
+      return { formula: `IF(${totalFormula}>0,(${attendedFormula}+${excusedFormula})/${totalFormula}*100,0)` };
+  }
 }
 
 function resetWorksheetView(worksheet: ExcelJS.Worksheet) {
@@ -184,21 +349,25 @@ async function generateExcelReports(
 
   // 데이터 추출
   let dataRows: Record<string, unknown>[];
+  let dataColumns: string[];
 
   switch (dataFormat) {
     case 'xlsx':
     case 'xls': {
       const result = await extractExcelData(dataBuffer, dataSheet);
+      dataColumns = result.columns;
       dataRows = result.data;
       break;
     }
     case 'csv': {
       const result = extractCsvData(dataBuffer);
+      dataColumns = result.columns;
       dataRows = result.data;
       break;
     }
     case 'json': {
       const result = extractJsonData(dataBuffer);
+      dataColumns = result.columns;
       dataRows = result.data;
       break;
     }
@@ -230,12 +399,26 @@ async function generateExcelReports(
   const { headerRowNum: templateHeaderRow } = await findSmartHeaderRow(ws);
   const { compositeColumns: templateCompositeColumns, dataStartRow: firstDataRow } =
     detectMultiRowHeaders(ws, templateHeaderRow);
+  const templateColumns = templateCompositeColumns.map(c => c.name);
 
   // 템플릿 복합 컬럼명 → 열 인덱스 매핑
   const templateColumnIndex = new Map<string, number>();
   for (const { colIndex, name } of templateCompositeColumns) {
     templateColumnIndex.set(name, colIndex);
   }
+
+  const templateAttendanceFields = templateColumns.filter(isAttendanceColumn);
+  const templateSummaryFields = templateColumns.filter(isSummaryColumn);
+  const attendanceFieldSet = new Set(templateAttendanceFields);
+  const summaryFieldSet = new Set(templateSummaryFields);
+  const isAttendanceReport = templateAttendanceFields.length >= 3 && dataColumns.filter(isAttendanceColumn).length >= 3;
+  const summaryFormulaMap = isAttendanceReport ? buildSummaryFormulaMap(templateColumns) : new Map<string, SummaryFormulaKey>();
+  const attendanceColumnNumbers = templateAttendanceFields
+    .map(field => templateColumnIndex.get(field))
+    .filter((value): value is number => value !== undefined);
+  const attendanceRange = attendanceColumnNumbers.length > 0
+    ? `${columnNumberToName(Math.min(...attendanceColumnNumbers))}${firstDataRow}:${columnNumberToName(Math.max(...attendanceColumnNumbers))}${firstDataRow}`
+    : null;
 
   // 첫 번째 데이터 행의 스타일 저장 (후속 행에 복사용)
   const firstRow = ws.getRow(firstDataRow);
@@ -270,6 +453,7 @@ async function generateExcelReports(
   const mappedColIndices = new Set<number>();
   for (const [templateField] of Array.from(mappingMap.entries())) {
     const colIndex = templateColumnIndex.get(templateField);
+    if (isAttendanceReport && summaryFieldSet.has(templateField)) continue;
     if (colIndex) mappedColIndices.add(colIndex);
   }
 
@@ -300,11 +484,13 @@ async function generateExcelReports(
     const rowData = dataRows[rowIdx];
     const targetRowNum = firstDataRow + rowIdx;
     const targetRow = ws.getRow(targetRowNum);
+    const rowAttendanceMap = isAttendanceReport ? buildRowAttendanceMap(rowData, dataColumns) : null;
 
     // 매핑에 따라 데이터 채우기
     for (const [templateField, dataColumn] of Array.from(mappingMap.entries())) {
       const colIndex = templateColumnIndex.get(templateField);
       if (!colIndex) continue;
+      if (isAttendanceReport && summaryFieldSet.has(templateField)) continue;
 
       const cell = targetRow.getCell(colIndex);
 
@@ -317,7 +503,9 @@ async function generateExcelReports(
           cell.style = style as ExcelJS.Style;
         }
       } else if (rowData[dataColumn] !== undefined) {
-        const value = rowData[dataColumn];
+        const value = isAttendanceReport && attendanceFieldSet.has(templateField)
+          ? resolveAttendanceSymbolForTemplateField(templateField, rowAttendanceMap || new Map(), rowData[dataColumn])
+          : rowData[dataColumn];
 
         if (isBlankCellValue(value)) {
           cell.value = null;
@@ -332,6 +520,21 @@ async function generateExcelReports(
         }
 
         // 첫 데이터 행의 스타일 적용
+        const style = styleCache.get(colIndex);
+        if (style) {
+          cell.style = style as ExcelJS.Style;
+        }
+      }
+    }
+
+    if (isAttendanceReport && attendanceRange) {
+      const rowAttendanceRange = attendanceRange.replace(`${firstDataRow}`, `${targetRowNum}`).replace(`${firstDataRow}`, `${targetRowNum}`);
+      for (const [templateField, formulaKey] of Array.from(summaryFormulaMap.entries())) {
+        const colIndex = templateColumnIndex.get(templateField);
+        if (!colIndex) continue;
+
+        const cell = targetRow.getCell(colIndex);
+        cell.value = buildSummaryFormula(formulaKey, rowAttendanceRange);
         const style = styleCache.get(colIndex);
         if (style) {
           cell.style = style as ExcelJS.Style;
