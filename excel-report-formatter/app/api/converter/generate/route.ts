@@ -57,8 +57,13 @@ function extractDatesFromTemplateCol(colName: string): ParsedDate[] {
 }
 
 function extractMonthFromDataCol(colName: string): number | null {
-  const match = colName.match(/(\d{1,2})월/);
-  return match ? parseInt(match[1], 10) : null;
+  // Korean format: "12월"
+  const korMatch = colName.match(/(\d{1,2})월/);
+  if (korMatch) return parseInt(korMatch[1], 10);
+  // ISO date format: "2026-01-05"
+  const isoMatch = colName.match(/\d{4}-(\d{2})-\d{2}/);
+  if (isoMatch) return parseInt(isoMatch[1], 10);
+  return null;
 }
 
 function extractDayFromSampleValue(value: unknown): number | null {
