@@ -38,7 +38,7 @@ export function detectMultiRowHeaders(
     let shortTextCount = 0;
     let dateCount = 0;
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    let numericCount = 0;
+    let _numericCount = 0;
     let matchesPrimaryCount = 0;
 
     row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
@@ -59,13 +59,13 @@ export function detectMultiRowHeaders(
         return;
       }
       if (typeof value === 'number') {
-        numericCount++;
+        _numericCount++;
         return;
       }
       if (typeof value === 'object' && value !== null && 'result' in value) {
         hasFormula = true;
         const result = (value as { result: unknown }).result;
-        if (typeof result === 'number') numericCount++;
+        if (typeof result === 'number') _numericCount++;
         return;
       }
 
@@ -316,6 +316,177 @@ export function cellValueToString(value: ExcelJS.CellValue): string {
   const extracted = safeExtractCellValue(value);
   if (extracted === null || extracted === undefined) return '';
   return String(extracted);
+}
+
+/**
+ * 같은 사람의 여러 행(일정 + 출결 등)을 1행으로 병합합니다.
+ * 패턴: 이메일 있는 행 다음에 이메일 없는 행이 교대로 나오는 구조.
+ * - fillCols: 한 행만 값 있고 나머지 null → 비null 값 사용
+ * - differingCols: 양쪽 모두 값 있고 다름 → 접미사(일정/출결) 붙여 분리
+ */
+export function mergePairedRows(
+  data: Record<string, unknown>[],
+  columns: string[],
+): { rows: Record<string, unknown>[]; columns: string[] } {
+  if (data.length < 2) return { rows: data, columns };
+
+  // 이메일 컬럼 자동 감지
+  const emailPatterns = ['이메일', 'email', 'e-mail', 'e_mail', 'mail'];
+  let emailCol: string | null = null;
+  for (const col of columns) {
+    const normalized = col.replace(/\s+/g, '').toLowerCase();
+    if (emailPatterns.some(p => normalized.includes(p))) {
+      emailCol = col;
+      break;
+    }
+  }
+  if (!emailCol) {
+    const sample = data.slice(0, Math.min(5, data.length));
+    for (const col of columns) {
+      const count = sample.filter(row => {
+        const val = String(row[col] ?? '').trim();
+        return val.includes('@') && val.includes('.');
+      }).length;
+      if (count >= Math.ceil(sample.length * 0.5)) {
+        emailCol = col;
+        break;
+      }
+    }
+  }
+  if (!emailCol) return { rows: data, columns };
+
+  // 그룹핑: 2가지 패턴 지원
+  // 1) 교대 패턴: 이메일 있는 행 + 뒤따르는 이메일 없는 행
+  // 2) 연속 동일 이메일 패턴: 같은 이메일이 연속으로 나오는 경우 (ExcelJS 병합셀)
+  const groups: Record<string, unknown>[][] = [];
+  let i = 0;
+  while (i < data.length) {
+    const email = String(data[i][emailCol] ?? '').trim().toLowerCase();
+    if (email) {
+      const group = [data[i]];
+      while (i + 1 < data.length) {
+        const nextEmail = String(data[i + 1][emailCol] ?? '').trim().toLowerCase();
+        if (nextEmail === email || !nextEmail) {
+          i++;
+          group.push(data[i]);
+        } else {
+          break;
+        }
+      }
+      groups.push(group);
+    } else {
+      groups.push([data[i]]);
+    }
+    i++;
+  }
+
+  if (!groups.some(g => g.length > 1)) return { rows: data, columns };
+
+  // 컬럼 분류
+  // 첫 학생 그룹만 기준으로 잡으면, 앞 학생에게 비어 있는 후반 회차 컬럼이
+  // same/fill로 굳어져 "(출결)" suffix가 사라질 수 있다.
+  // 전체 멀티행 그룹을 훑어 한 번이라도 일정/출결 쌍이 관측된 컬럼은 differing으로 분류한다.
+  const multiRowGroups = groups.filter(g => g.length > 1);
+  const sameCols: string[] = [];
+  const fillCols: string[] = [];
+  const differingCols: string[] = [];
+
+  for (const h of columns) {
+    let hasDiffering = false;
+    let hasFill = false;
+
+    for (const group of multiRowGroups) {
+      const values = group.map(r => String(r[h] ?? '').trim());
+      const nonEmpty = values.filter(v => v);
+      const uniqueNonEmpty = Array.from(new Set(nonEmpty));
+
+      if (uniqueNonEmpty.length >= 2) {
+        hasDiffering = true;
+        break;
+      }
+
+      if (nonEmpty.length === 1) {
+        hasFill = true;
+      }
+    }
+
+    if (hasDiffering) {
+      differingCols.push(h);
+    } else if (hasFill) {
+      fillCols.push(h);
+    } else {
+      sameCols.push(h);
+    }
+  }
+
+  if (differingCols.length === 0) {
+    const merged = groups.map(group => {
+      const row: Record<string, unknown> = {};
+      for (const col of columns) {
+        row[col] = group.reduce<unknown>((acc, r) => {
+          const val = r[col];
+          return (acc === null || acc === undefined || acc === '') ? val : acc;
+        }, null);
+      }
+      return row;
+    });
+    return { rows: merged, columns };
+  }
+
+  // 출결 패턴 감지
+  const attendancePattern = /^(Y|N|C|L|O|X|-|출석|결석|지각|공결|중도입과)$/i;
+  const isAttendanceRow = (row: Record<string, unknown>): boolean => {
+    let mc = 0, tc = 0;
+    for (const col of differingCols) {
+      const val = String(row[col] ?? '').trim();
+      if (val) { tc++; if (attendancePattern.test(val)) mc++; }
+    }
+    return tc > 0 && mc / tc > 0.5;
+  };
+
+  const sampleGroup = multiRowGroups
+    .map(group => ({
+      group,
+      score: differingCols.reduce((count, col) => {
+        return count + (group.some(row => String(row[col] ?? '').trim().length > 0) ? 1 : 0);
+      }, 0),
+    }))
+    .sort((a, b) => b.score - a.score || b.group.length - a.group.length)[0]?.group || multiRowGroups[0];
+
+  const rowLabels = sampleGroup.map(r => isAttendanceRow(r) ? '출결' : '일정');
+  const useLabels = new Set(rowLabels).size > 1;
+
+  const baseCols = [...sameCols, ...fillCols];
+  const newColumns = [...baseCols];
+  for (let idx = 0; idx < sampleGroup.length; idx++) {
+    const suffix = useLabels ? rowLabels[idx] : `${idx + 1}`;
+    for (const col of differingCols) {
+      newColumns.push(`${col}(${suffix})`);
+    }
+  }
+
+  const mergedRows: Record<string, unknown>[] = [];
+  for (const group of groups) {
+    const merged: Record<string, unknown> = {};
+    for (const col of baseCols) {
+      merged[col] = group.reduce<unknown>((acc, r) => {
+        const val = r[col];
+        return (acc === null || acc === undefined || acc === '') ? val : acc;
+      }, null);
+    }
+    for (let idx = 0; idx < group.length; idx++) {
+      const suffix = useLabels
+        ? (isAttendanceRow(group[idx]) ? '출결' : '일정')
+        : `${idx + 1}`;
+      for (const col of differingCols) {
+        merged[`${col}(${suffix})`] = group[idx][col];
+      }
+    }
+    mergedRows.push(merged);
+  }
+
+  console.log(`[mergePairedRows] Merged by "${emailCol}": ${data.length} → ${mergedRows.length} rows, ${columns.length} → ${newColumns.length} columns`);
+  return { rows: mergedRows, columns: newColumns };
 }
 
 /**
