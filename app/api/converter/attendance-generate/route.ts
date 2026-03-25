@@ -506,6 +506,17 @@ async function generateExcelReports(
 
       const cell = targetRow.getCell(colIndex);
 
+      // Resolve actual data column key (handle legacy mappings without 출결/일정 suffix)
+      let resolvedColumn = dataColumn;
+      if (rowData[dataColumn] === undefined) {
+        // Try (출결) suffix variant
+        if (rowData[dataColumn + '(출결)'] !== undefined) {
+          resolvedColumn = dataColumn + '(출결)';
+        } else if (rowData[dataColumn + '(일정)'] !== undefined) {
+          resolvedColumn = dataColumn + '(일정)';
+        }
+      }
+
       // Check if this is a metadata constant mapping
       const metadataValue = metadataMappings.get(templateField);
       if (metadataValue !== undefined) {
@@ -514,10 +525,10 @@ async function generateExcelReports(
         if (style) {
           cell.style = style as ExcelJS.Style;
         }
-      } else if (rowData[dataColumn] !== undefined) {
+      } else if (rowData[resolvedColumn] !== undefined) {
         const value = isAttendanceReport && attendanceFieldSet.has(templateField)
-          ? resolveAttendanceSymbolForTemplateField(templateField, rowAttendanceMap || new Map(), rowData[dataColumn])
-          : rowData[dataColumn];
+          ? resolveAttendanceSymbolForTemplateField(templateField, rowAttendanceMap || new Map(), rowData[resolvedColumn])
+          : rowData[resolvedColumn];
 
         if (isBlankCellValue(value)) {
           cell.value = null;
