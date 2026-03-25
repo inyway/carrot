@@ -24,6 +24,14 @@ interface ParsedDate {
   day?: number;
 }
 
+interface AttendanceColumnPair {
+  base: string;
+  scheduleColumn?: string;
+  attendanceColumn?: string;
+  month?: number | null;
+  session?: number | null;
+}
+
 function isBlankCellValue(value: unknown): boolean {
   return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
 }
@@ -34,9 +42,17 @@ function normalizeColName(name: string): string {
 
 function isAttendanceColumn(colName: string): boolean {
   const normalized = normalizeColName(colName);
+  if (/\((출결|일정)\)\s*$/.test(colName)) return true;
   if (/출결|출석률|결석|합계|비고|미참석|출석\s*\(|공결/i.test(normalized)) return false;
   if (/(?<!\d)회차\s*$/i.test(normalized)) return false;
-  return /\d+\s*(week|월|회차)/i.test(normalized);
+  if (/\d+\s*(week|월|회차)/i.test(normalized)) return true;
+  if (/\b\d{1,2}\s*\([A-Za-z]{2,3}\)\b/.test(normalized)) return true;
+  if (/^\d{1,2}$/.test(normalized)) {
+    const num = parseInt(normalized, 10);
+    if (num >= 1 && num <= 40) return true;
+  }
+  if (/\d{1,2}월\s*\d{1,2}일/.test(normalized)) return true;
+  return false;
 }
 
 function isSummaryColumn(colName: string): boolean {
@@ -53,7 +69,22 @@ function extractDatesFromTemplateCol(colName: string): ParsedDate[] {
   while ((match = regex.exec(colName)) !== null) {
     dates.push({ month: parseInt(match[1], 10), day: parseInt(match[2], 10) });
   }
+  if (dates.length > 0) return dates;
+
+  const month = extractMonthFromDataCol(colName);
+  const bareDateRegex = /(\d{1,2})\s*\([A-Za-z]{2,3}\)/g;
+  while ((match = bareDateRegex.exec(colName)) !== null) {
+    dates.push({
+      month: month ?? undefined,
+      day: parseInt(match[1], 10),
+    });
+  }
   return dates;
+}
+
+function extractSessionNumber(colName: string): number | null {
+  const match = normalizeColName(colName).match(/(\d{1,2})\s*회차/i);
+  return match ? parseInt(match[1], 10) : null;
 }
 
 function extractMonthFromDataCol(colName: string): number | null {
@@ -125,36 +156,60 @@ function calculateSummaryResult(
   }
 }
 
-function buildRowAttendanceMap(
-  rowData: Record<string, unknown>,
-  dataColumns: string[],
-): Map<string, unknown> {
-  const attendanceMap = new Map<string, unknown>();
-  const pairMap = new Map<string, { schedule?: string; attendance?: string }>();
+function buildAttendancePairs(dataColumns: string[]): AttendanceColumnPair[] {
+  const pairs: AttendanceColumnPair[] = [];
+  const pairIndex = new Map<string, number>();
+
+  const ensurePair = (base: string): AttendanceColumnPair => {
+    const existingIndex = pairIndex.get(base);
+    if (existingIndex !== undefined) {
+      return pairs[existingIndex];
+    }
+
+    const pair: AttendanceColumnPair = {
+      base,
+      month: extractMonthFromDataCol(base),
+      session: extractSessionNumber(base),
+    };
+    pairIndex.set(base, pairs.length);
+    pairs.push(pair);
+    return pair;
+  };
 
   for (const col of dataColumns) {
     const scheduleMatch = col.match(/^(.*)\(일정\)$/);
-    const attendanceMatch = col.match(/^(.*)\(출결\)$/);
-
     if (scheduleMatch) {
-      const base = scheduleMatch[1].trim();
-      pairMap.set(base, { ...(pairMap.get(base) || {}), schedule: col });
+      ensurePair(scheduleMatch[1].trim()).scheduleColumn = col;
+      continue;
     }
 
+    const attendanceMatch = col.match(/^(.*)\(출결\)$/);
     if (attendanceMatch) {
-      const base = attendanceMatch[1].trim();
-      pairMap.set(base, { ...(pairMap.get(base) || {}), attendance: col });
+      ensurePair(attendanceMatch[1].trim()).attendanceColumn = col;
+      continue;
+    }
+
+    if (isAttendanceColumn(col)) {
+      ensurePair(col).attendanceColumn = col;
     }
   }
 
-  for (const [base, pair] of Array.from(pairMap.entries())) {
-    if (!pair.schedule || !pair.attendance) continue;
+  return pairs;
+}
 
-    const month = extractMonthFromDataCol(base);
-    const day = extractDayFromSampleValue(rowData[pair.schedule]);
+function buildRowAttendanceMap(
+  rowData: Record<string, unknown>,
+  attendancePairs: AttendanceColumnPair[],
+): Map<string, unknown> {
+  const attendanceMap = new Map<string, unknown>();
+  for (const pair of attendancePairs) {
+    if (!pair.scheduleColumn || !pair.attendanceColumn) continue;
+
+    const day = extractDayFromSampleValue(rowData[pair.scheduleColumn]);
+    const month = pair.month ?? extractMonthFromDataCol(pair.base);
     if (!month || day === null) continue;
 
-    attendanceMap.set(`${month}-${day}`, rowData[pair.attendance] ?? null);
+    attendanceMap.set(`${month}-${day}`, rowData[pair.attendanceColumn] ?? null);
   }
 
   return attendanceMap;
@@ -164,6 +219,10 @@ function resolveAttendanceSymbolForTemplateField(
   templateField: string,
   rowAttendanceMap: Map<string, unknown>,
   fallbackValue: unknown,
+  rowData: Record<string, unknown>,
+  mappedDataColumn: string,
+  attendancePairs: AttendanceColumnPair[],
+  templateAttendanceIndex: number,
 ): unknown {
   const dates = extractDatesFromTemplateCol(templateField);
 
@@ -173,6 +232,37 @@ function resolveAttendanceSymbolForTemplateField(
     if (rowAttendanceMap.has(key)) {
       return rowAttendanceMap.get(key) ?? null;
     }
+  }
+
+  const matchedPair = attendancePairs.find(pair =>
+    pair.attendanceColumn === mappedDataColumn ||
+    pair.scheduleColumn === mappedDataColumn ||
+    pair.base === mappedDataColumn
+  );
+
+  if (matchedPair?.attendanceColumn && rowData[matchedPair.attendanceColumn] !== undefined) {
+    return rowData[matchedPair.attendanceColumn];
+  }
+
+  const templateMonth = extractMonthFromDataCol(templateField);
+  const templateSession = extractSessionNumber(templateField);
+  if (templateSession !== null) {
+    const sessionMatchedPair = attendancePairs.find(pair =>
+      pair.attendanceColumn &&
+      pair.session === templateSession &&
+      (templateMonth === null || pair.month === templateMonth)
+    );
+    if (sessionMatchedPair?.attendanceColumn && rowData[sessionMatchedPair.attendanceColumn] !== undefined) {
+      return rowData[sessionMatchedPair.attendanceColumn];
+    }
+  }
+
+  const orderedAttendanceColumns = attendancePairs
+    .map(pair => pair.attendanceColumn)
+    .filter((column): column is string => Boolean(column));
+  const positionalColumn = orderedAttendanceColumns[templateAttendanceIndex];
+  if (positionalColumn && rowData[positionalColumn] !== undefined) {
+    return rowData[positionalColumn];
   }
 
   return fallbackValue;
@@ -455,9 +545,12 @@ async function generateExcelReports(
 
   const templateAttendanceFields = templateColumns.filter(isAttendanceColumn);
   const templateSummaryFields = templateColumns.filter(isSummaryColumn);
+  const attendancePairs = buildAttendancePairs(dataColumns);
   const attendanceFieldSet = new Set(templateAttendanceFields);
+  const templateAttendanceFieldIndex = new Map(templateAttendanceFields.map((field, index) => [field, index]));
   const summaryFieldSet = new Set(templateSummaryFields);
-  const isAttendanceReport = templateAttendanceFields.length >= 3 && dataColumns.filter(isAttendanceColumn).length >= 3;
+  const availableAttendanceColumns = attendancePairs.filter(pair => pair.attendanceColumn).length;
+  const isAttendanceReport = templateAttendanceFields.length >= 3 && availableAttendanceColumns >= 3;
   const summaryFormulaMap = isAttendanceReport ? buildSummaryFormulaMap(templateColumns) : new Map<string, SummaryFormulaKey>();
   const attendanceColumnNumbers = templateAttendanceFields
     .map(field => templateColumnIndex.get(field))
@@ -530,7 +623,7 @@ async function generateExcelReports(
     const rowData = dataRows[rowIdx];
     const targetRowNum = firstDataRow + rowIdx;
     const targetRow = ws.getRow(targetRowNum);
-    const rowAttendanceMap = isAttendanceReport ? buildRowAttendanceMap(rowData, dataColumns) : null;
+    const rowAttendanceMap = isAttendanceReport ? buildRowAttendanceMap(rowData, attendancePairs) : null;
     const resolvedAttendanceValues: unknown[] = [];
 
     // 매핑에 따라 데이터 채우기
@@ -550,8 +643,17 @@ async function generateExcelReports(
           cell.style = style as ExcelJS.Style;
         }
       } else if (rowData[dataColumn] !== undefined) {
+        const templateAttendanceIndex = templateAttendanceFieldIndex.get(templateField) ?? -1;
         const value = isAttendanceReport && attendanceFieldSet.has(templateField)
-          ? resolveAttendanceSymbolForTemplateField(templateField, rowAttendanceMap || new Map(), rowData[dataColumn])
+          ? resolveAttendanceSymbolForTemplateField(
+              templateField,
+              rowAttendanceMap || new Map(),
+              rowData[dataColumn],
+              rowData,
+              dataColumn,
+              attendancePairs,
+              templateAttendanceIndex,
+            )
           : rowData[dataColumn];
 
         if (isAttendanceReport && attendanceFieldSet.has(templateField) && !isBlankCellValue(value)) {
