@@ -187,17 +187,30 @@ function extractDatesFromTemplateCol(colName: string): ParsedDate[] {
 }
 
 /**
- * Extract month from raw data column name.
- * e.g. "12월_1회차" → 12, "9월_3회차" → 9, "1 Week_1_2026-01-05" → 1
+ * Extract month from column name (supports multiple formats).
+ * e.g. "12월_1회차" → 12, "9월_3회차" → 9, "1 Week_1_2026-01-05" → 1,
+ *      "1 Week_1_Mon Jan 05 2026" → 1
  */
-function extractMonthFromDataCol(colName: string): number | null {
+function extractMonthFromCol(colName: string): number | null {
   // Korean format: "12월"
   const korMatch = colName.match(/(\d{1,2})월/);
   if (korMatch) return parseInt(korMatch[1], 10);
   // ISO date format: "2026-01-05"
   const isoMatch = colName.match(/\d{4}-(\d{2})-\d{2}/);
   if (isoMatch) return parseInt(isoMatch[1], 10);
+  // English month name: "Jan", "Feb", "Mar" etc.
+  const ENG_MONTHS: Record<string, number> = {
+    jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+    jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  };
+  const engMatch = colName.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i);
+  if (engMatch) return ENG_MONTHS[engMatch[1].toLowerCase()] ?? null;
   return null;
+}
+
+// Backward-compatible alias
+function extractMonthFromDataCol(colName: string): number | null {
+  return extractMonthFromCol(colName);
 }
 
 /**
@@ -250,68 +263,67 @@ function extractFromClassName(className: string, fieldKey: string): string | nul
 }
 
 /**
- * Extract month and session number from template column.
- * e.g. "3월_1회차(출결)" → { month: 3, session: 1 }, "2월_2회차" → { month: 2, session: 2 }
+ * Month-based attendance column matching.
+ * Extracts month from BOTH template and data columns using extractMonthFromCol
+ * (supports Korean "3월", ISO "2026-01-05", English "Jan"/"Feb"/"Mar" etc.)
+ * then matches by month, maintaining session order within each month.
  */
-function extractMonthSessionFromTemplate(colName: string): { month: number; session: number } | null {
-  const match = colName.match(/(\d{1,2})월[_\s]*(\d{1,2})회차/);
-  return match ? { month: parseInt(match[1], 10), session: parseInt(match[2], 10) } : null;
-}
-
-/**
- * Month+session-based attendance column matching.
- * Matches template columns (e.g. "3월_1회차(출결)") to data columns by extracting month
- * from either Korean ("12월") or ISO ("2026-01-05") format, then matching session order
- * within each month.
- */
-function monthSessionAttendanceMapping(
+function monthBasedAttendanceMapping(
   templateAttendanceCols: string[],
   dataAttendanceCols: string[],
 ): MappingResult[] {
-  // Extract month+session from ALL template cols; bail out if any col doesn't match the format
-  const templateByMonth = new Map<number, { col: string; session: number }[]>();
+  // Group template cols by month
+  const templateByMonth = new Map<number, string[]>();
+  let templateMonthCount = 0;
   for (const col of templateAttendanceCols) {
-    const ms = extractMonthSessionFromTemplate(col);
-    if (!ms) return []; // Not month+session format — let other strategies handle it
-    if (!templateByMonth.has(ms.month)) templateByMonth.set(ms.month, []);
-    templateByMonth.get(ms.month)!.push({ col, session: ms.session });
+    const month = extractMonthFromCol(col);
+    if (!month) continue;
+    templateMonthCount++;
+    if (!templateByMonth.has(month)) templateByMonth.set(month, []);
+    templateByMonth.get(month)!.push(col);
   }
 
-  if (templateByMonth.size === 0) return [];
+  // Need at least half of template cols to have extractable months
+  if (templateMonthCount < templateAttendanceCols.length * 0.5) return [];
 
-  // Sort sessions within each month
-  for (const sessions of Array.from(templateByMonth.values())) {
-    sessions.sort((a, b) => a.session - b.session);
-  }
-
-  // Group data cols by month, maintaining original order
-  // When merged pairs exist, prefer (출결) columns for matching
+  // Group data cols by month (prefer 출결 columns when merged pairs exist)
   const hasMergedPairs = dataAttendanceCols.some(c => /\((출결|일정)\)$/.test(c));
   const matchableDataCols = hasMergedPairs
     ? dataAttendanceCols.filter(c => /\(출결\)$/.test(c))
     : dataAttendanceCols;
 
   const dataByMonth = new Map<number, string[]>();
+  let dataMonthCount = 0;
   for (const col of matchableDataCols) {
-    const month = extractMonthFromDataCol(col);
+    const month = extractMonthFromCol(col);
     if (!month) continue;
+    dataMonthCount++;
     if (!dataByMonth.has(month)) dataByMonth.set(month, []);
     dataByMonth.get(month)!.push(col);
   }
 
-  // Match by month, then by session order within month
+  if (dataMonthCount < matchableDataCols.length * 0.5) return [];
+
+  // Need at least one month overlap
+  let hasOverlap = false;
+  for (const month of Array.from(templateByMonth.keys())) {
+    if (dataByMonth.has(month)) { hasOverlap = true; break; }
+  }
+  if (!hasOverlap) return [];
+
+  // Match by month, then by position within month
   const results: MappingResult[] = [];
-  for (const [month, templateSessions] of Array.from(templateByMonth.entries())) {
+  for (const [month, templateCols] of Array.from(templateByMonth.entries())) {
     const dataCols = dataByMonth.get(month);
     if (!dataCols) continue;
 
-    const matchCount = Math.min(templateSessions.length, dataCols.length);
+    const matchCount = Math.min(templateCols.length, dataCols.length);
     for (let i = 0; i < matchCount; i++) {
       results.push({
-        templateField: templateSessions[i].col,
+        templateField: templateCols[i],
         dataColumn: dataCols[i],
         confidence: 0.9,
-        reason: `월+회차 매칭 (${month}월 ${templateSessions[i].session}회차)`,
+        reason: `월 기반 매칭 (${month}월 ${i + 1}번째)`,
       });
     }
   }
@@ -609,7 +621,7 @@ function attendanceAwareMapping(
       }
     } else {
       // Try month+session matching (e.g. "3월_1회차" ↔ "1 Week_1_2026-03-05")
-      const monthSessionMatched = monthSessionAttendanceMapping(
+      const monthSessionMatched = monthBasedAttendanceMapping(
         templateAttendanceCols, dataAttendanceCols
       );
 

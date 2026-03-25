@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import CubeLoader from '@/components/CubeLoader';
@@ -181,15 +181,11 @@ export default function ConverterPage() {
   // 매핑 컨텍스트 (AI 매핑에 참고할 도메인 정보)
   const [mappingContext, setMappingContext] = useState<MappingContext | null>(null);
 
-  // 양쪽 파일 분석 완료 시 자동 매핑을 위한 pending flag
-  const pendingAutoMapping = useRef(false);
+  // 템플릿 파일 선택
+  const handleTemplateSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  // 드래그 앤 드롭 상태
-  const [dragOverTemplate, setDragOverTemplate] = useState(false);
-  const [dragOverData, setDragOverData] = useState(false);
-
-  // 템플릿 파일 처리 (공통)
-  const processTemplateFile = async (file: File) => {
     const format = detectFormat(file.name);
 
     if (!['xlsx', 'csv', 'hwpx'].includes(format)) {
@@ -265,24 +261,16 @@ export default function ConverterPage() {
       setAnalyzingTemplate(false);
     }
 
-    // 데이터 파일이 이미 분석 완료되어 있으면 자동 매핑 예약
-    if (dataFile?.columns?.length) {
-      pendingAutoMapping.current = true;
-    }
-
     if (templateInputRef.current) {
       templateInputRef.current.value = '';
     }
   };
 
-  // 템플릿 파일 선택 (input onChange)
-  const handleTemplateSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 데이터 파일 선택
+  const handleDataSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) processTemplateFile(file);
-  };
+    if (!file) return;
 
-  // 데이터 파일 처리 (공통)
-  const processDataFile = async (file: File) => {
     const format = detectFormat(file.name);
 
     if (!['xlsx', 'xls', 'csv', 'json'].includes(format)) {
@@ -333,51 +321,9 @@ export default function ConverterPage() {
       setAnalyzingData(false);
     }
 
-    // 템플릿이 이미 분석 완료되어 있으면 자동 매핑 예약
-    if (templateFile?.columns?.length || templateFile?.placeholders?.length) {
-      pendingAutoMapping.current = true;
-    }
-
     if (dataInputRef.current) {
       dataInputRef.current.value = '';
     }
-  };
-
-  // 데이터 파일 선택 (input onChange)
-  const handleDataSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) processDataFile(file);
-  };
-
-  // 드래그 앤 드롭 핸들러
-  const handleDrop = (type: 'template' | 'data') => (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (type === 'template') setDragOverTemplate(false);
-    else setDragOverData(false);
-
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-
-    if (type === 'template') {
-      processTemplateFile(file);
-    } else {
-      processDataFile(file);
-    }
-  };
-
-  const handleDragOver = (type: 'template' | 'data') => (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (type === 'template') setDragOverTemplate(true);
-    else setDragOverData(true);
-  };
-
-  const handleDragLeave = (type: 'template' | 'data') => (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (type === 'template') setDragOverTemplate(false);
-    else setDragOverData(false);
   };
 
   // 시트 변경
@@ -671,14 +617,6 @@ export default function ConverterPage() {
       setAutoMapping(false);
     }
   };
-
-  // 양쪽 파일 분석 완료 후 자동 매핑 트리거
-  useEffect(() => {
-    if (pendingAutoMapping.current && !autoMapping && !analyzingTemplate && !analyzingData && mappings.length === 0) {
-      pendingAutoMapping.current = false;
-      handleAutoMapping();
-    }
-  });
 
   // 매핑 수정
   const handleMappingChange = (templateField: string, dataColumn: string) => {
@@ -992,15 +930,8 @@ export default function ConverterPage() {
                 ) : (
                   <button
                     onClick={() => templateInputRef.current?.click()}
-                    onDrop={handleDrop('template')}
-                    onDragOver={handleDragOver('template')}
-                    onDragLeave={handleDragLeave('template')}
                     disabled={analyzingTemplate}
-                    className={`w-full p-6 border-2 border-dashed rounded-lg transition-all text-center ${
-                      dragOverTemplate
-                        ? 'border-orange-500 bg-orange-100 scale-[1.02]'
-                        : 'border-orange-300 hover:border-orange-400 hover:bg-orange-50'
-                    }`}
+                    className="w-full p-6 border-2 border-dashed border-orange-300 rounded-lg hover:border-orange-400 hover:bg-orange-50 transition-all text-center"
                   >
                     {analyzingTemplate ? (
                       <div className="flex flex-col items-center">
@@ -1013,7 +944,7 @@ export default function ConverterPage() {
                     ) : (
                       <>
                         <span className="text-3xl block mb-2">📑</span>
-                        <p className="text-gray-600 font-medium">{dragOverTemplate ? '여기에 놓으세요' : '템플릿 파일 선택 또는 드래그'}</p>
+                        <p className="text-gray-600 font-medium">템플릿 파일 선택</p>
                         <p className="text-sm text-gray-400 mt-1">xlsx, csv, hwpx</p>
                       </>
                     )}
@@ -1091,15 +1022,8 @@ export default function ConverterPage() {
                 ) : (
                   <button
                     onClick={() => dataInputRef.current?.click()}
-                    onDrop={handleDrop('data')}
-                    onDragOver={handleDragOver('data')}
-                    onDragLeave={handleDragLeave('data')}
                     disabled={analyzingData}
-                    className={`w-full p-6 border-2 border-dashed rounded-lg transition-all text-center ${
-                      dragOverData
-                        ? 'border-blue-500 bg-blue-100 scale-[1.02]'
-                        : 'border-blue-300 hover:border-blue-400 hover:bg-blue-50'
-                    }`}
+                    className="w-full p-6 border-2 border-dashed border-blue-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all text-center"
                   >
                     {analyzingData ? (
                       <div className="flex flex-col items-center">
@@ -1112,7 +1036,7 @@ export default function ConverterPage() {
                     ) : (
                       <>
                         <span className="text-3xl block mb-2">📊</span>
-                        <p className="text-gray-600 font-medium">{dragOverData ? '여기에 놓으세요' : '데이터 파일 선택 또는 드래그'}</p>
+                        <p className="text-gray-600 font-medium">데이터 파일 선택</p>
                         <p className="text-sm text-gray-400 mt-1">xlsx, xls, csv, json</p>
                       </>
                     )}
