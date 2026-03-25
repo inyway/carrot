@@ -3,8 +3,6 @@ import * as ExcelJS from 'exceljs';
 import { safeExtractCellValue, detectMultiRowHeaders, isRepeatedHeaderOrMetadata, findSmartHeaderRow, mergePairedRows } from '@/lib/cell-value-utils';
 
 export const runtime = 'nodejs';
-const API_BASE_URL = process.env.NESTJS_API_URL || process.env.NEXT_PUBLIC_NEST_API_URL || 'http://localhost:4000/api';
-const DEFAULT_ATTENDANCE_COMPANY_ID = 'default';
 
 interface MappingItem {
   templateField: string;
@@ -111,10 +109,6 @@ function extractDayFromSampleValue(value: unknown): number | null {
   const str = String(value).trim();
   const match = str.match(/^(\d{1,2})\s*\(/);
   return match ? parseInt(match[1], 10) : null;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function columnNumberToName(columnNumber: number): string {
@@ -365,84 +359,6 @@ function resetWorkbookView(workbook: ExcelJS.Workbook, activeSheetIndex: number)
     firstSheet: normalizedIndex,
     activeTab: normalizedIndex,
   }];
-}
-
-async function detectAttendanceTemplate(
-  templateBuffer: Buffer,
-  templateSheet?: string,
-): Promise<boolean> {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(templateBuffer as unknown as ArrayBuffer);
-
-  const targetSheet = templateSheet || workbook.worksheets[0]?.name;
-  const worksheet = workbook.getWorksheet(targetSheet);
-  if (!worksheet) {
-    return false;
-  }
-
-  const { headerRowNum } = findSmartHeaderRow(worksheet);
-  const { compositeColumns } = detectMultiRowHeaders(worksheet, headerRowNum);
-  const templateColumns = compositeColumns.map(col => col.name);
-
-  const attendanceColumns = templateColumns.filter(isAttendanceColumn);
-  const summaryColumns = templateColumns.filter(isSummaryColumn);
-
-  return attendanceColumns.length >= 3 && summaryColumns.length >= 3;
-}
-
-async function generateAttendanceReportViaGraph(
-  template: File,
-  data: File,
-  companyId: string,
-  dataSheet?: string,
-): Promise<Buffer> {
-  const formData = new FormData();
-  formData.append('template', template);
-  formData.append('data', data);
-  formData.append('companyId', companyId || DEFAULT_ATTENDANCE_COMPANY_ID);
-  if (dataSheet) {
-    formData.append('sheetName', dataSheet);
-  }
-
-  const generateRes = await fetch(`${API_BASE_URL}/attendance/generate`, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!generateRes.ok) {
-    const message = await generateRes.text();
-    throw new Error(message || '랭그래프 출결 보고서 생성 요청 실패');
-  }
-
-  const generateJson = await generateRes.json() as { jobId?: string };
-  if (!generateJson.jobId) {
-    throw new Error('랭그래프 출결 보고서 jobId를 받지 못했습니다.');
-  }
-
-  const maxAttempts = 90;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const downloadRes = await fetch(`${API_BASE_URL}/attendance/download/${generateJson.jobId}`, {
-      method: 'GET',
-      cache: 'no-store',
-    });
-
-    if (downloadRes.ok) {
-      return Buffer.from(await downloadRes.arrayBuffer());
-    }
-
-    const errorText = await downloadRes.text();
-    if (/생성 실패|failed/i.test(errorText)) {
-      throw new Error(errorText);
-    }
-
-    if (downloadRes.status !== 400) {
-      throw new Error(errorText || `랭그래프 출결 보고서 다운로드 실패 (${downloadRes.status})`);
-    }
-
-    await sleep(1000);
-  }
-
-  throw new Error('랭그래프 출결 보고서 생성 시간이 초과되었습니다.');
 }
 
 // Excel 데이터 추출 (multi-row 헤더 지원)
@@ -909,7 +825,6 @@ export async function POST(request: NextRequest) {
     const templateSheet = formData.get('templateSheet') as string | null;
     const dataSheet = formData.get('dataSheet') as string | null;
     const mappingsJson = formData.get('mappings') as string | null;
-    const companyId = (formData.get('companyId') as string | null) || DEFAULT_ATTENDANCE_COMPANY_ID;
 
     if (!template) {
       return NextResponse.json({ error: '템플릿 파일이 없습니다.' }, { status: 400 });
@@ -924,22 +839,15 @@ export async function POST(request: NextRequest) {
 
     const actualTemplateFormat = templateFormat || detectFormat(template.name);
     const actualDataFormat = dataFormat || detectFormat(data.name);
-    const shouldUseAttendanceGraph =
-      actualTemplateFormat === 'xlsx' &&
-      (actualDataFormat === 'xlsx' || actualDataFormat === 'xls') &&
-      await detectAttendanceTemplate(templateBuffer, templateSheet || undefined);
+    if (!mappingsJson) {
+      return NextResponse.json({ error: '매핑 정보가 없습니다.' }, { status: 400 });
+    }
 
-    const mappings: MappingItem[] = mappingsJson ? JSON.parse(mappingsJson) : [];
+    const mappings: MappingItem[] = JSON.parse(mappingsJson);
     const validMappings = mappings.filter(m => m.templateField && m.dataColumn);
 
-    if (!shouldUseAttendanceGraph) {
-      if (!mappingsJson) {
-        return NextResponse.json({ error: '매핑 정보가 없습니다.' }, { status: 400 });
-      }
-
-      if (validMappings.length === 0) {
-        return NextResponse.json({ error: '유효한 매핑이 없습니다.' }, { status: 400 });
-      }
+    if (validMappings.length === 0) {
+      return NextResponse.json({ error: '유효한 매핑이 없습니다.' }, { status: 400 });
     }
 
     let resultBuffer: Buffer;
@@ -947,25 +855,16 @@ export async function POST(request: NextRequest) {
     let fileName: string;
 
     if (actualTemplateFormat === 'xlsx') {
-      if (shouldUseAttendanceGraph) {
-        resultBuffer = await generateAttendanceReportViaGraph(
-          template,
-          data,
-          companyId,
-          dataSheet || undefined,
-        );
-      } else {
-        // Excel 템플릿 → 단일 .xlsx (batch 모드)
-        resultBuffer = await generateExcelReports(
-          templateBuffer,
-          dataBuffer,
-          validMappings,
-          actualTemplateFormat,
-          actualDataFormat,
-          templateSheet || undefined,
-          dataSheet || undefined,
-        );
-      }
+      // Excel 템플릿 → 단일 .xlsx (batch 모드)
+      resultBuffer = await generateExcelReports(
+        templateBuffer,
+        dataBuffer,
+        validMappings,
+        actualTemplateFormat,
+        actualDataFormat,
+        templateSheet || undefined,
+        dataSheet || undefined,
+      );
       contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       fileName = `report_${Date.now()}.xlsx`;
     } else if (actualTemplateFormat === 'csv') {
