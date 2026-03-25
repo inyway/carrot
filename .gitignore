@@ -37,3 +37,8 @@ next-env.d.ts
 
 # stale subdirectory copy (root is the actual project)
 excel-report-formatter/
+
+# other projects in same directory
+teacher-scheduling-agent/
+opic-navi-main/
+SPAC/
