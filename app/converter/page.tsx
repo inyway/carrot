@@ -189,7 +189,7 @@ export default function ConverterPage() {
   const [templateFile, setTemplateFile] = useState<TemplateInfo | null>(null);
   const [dataFile, setDataFile] = useState<FileInfo | null>(null);
   const [mappings, setMappingsState] = useState<MappingItem[]>([]);
-  const [isAttendanceReport, setIsAttendanceReport] = useState(false);
+  const [, setIsAttendanceReport] = useState(false);
   const isAttendanceReportRef = useRef(false);
 
   // mappings 상태와 ref를 동시에 업데이트하는 래퍼 함수
