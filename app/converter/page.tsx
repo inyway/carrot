@@ -882,12 +882,9 @@ export default function ConverterPage() {
         console.log('[Converter] Generate with mappingContext:', mappingContext);
       }
 
-      // 출결 보고서면 attendance 파이프라인 사용, 아니면 통합 생성기
-      const useAttendance = isAttendanceReportRef.current || isAttendanceReport;
-      const generateEndpoint = useAttendance
-        ? '/api/converter/attendance-generate'
-        : '/api/converter/generate';
-      console.log(`[Converter] Sending request to ${generateEndpoint}...`, { isAttendanceReport });
+      // 통합 생성기 사용 (multi-row 헤더 지원)
+      const generateEndpoint = '/api/converter/generate';
+      console.log(`[Converter] Sending request to ${generateEndpoint}...`);
       const res = await fetch(generateEndpoint, {
         method: 'POST',
         body: formData,
