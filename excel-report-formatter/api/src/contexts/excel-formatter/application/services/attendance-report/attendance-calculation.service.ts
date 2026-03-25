@@ -123,11 +123,11 @@ export class AttendanceCalculationService {
     // 미참석 = 총회차 - 출석
     const notAttendedFormula = `${totalSessionsFormula}-(${totalAttendedFormula})`;
 
-    // 출석률 = 출석/총회차*100
-    const attendanceRateFormula = `IF(${totalSessionsFormula}>0,(${totalAttendedFormula})/${totalSessionsFormula}*100,0)`;
+    // 출석률/실출석률은 percentage numFmt와 함께 쓰이므로 0~1 비율로 저장
+    const attendanceRateFormula = `IF(${totalSessionsFormula}>0,(${totalAttendedFormula})/${totalSessionsFormula},0)`;
 
-    // 실출석률 = 순수출석/총회차*100
-    const realAttendanceRateFormula = `IF(${totalSessionsFormula}>0,(${attendedFormula})/${totalSessionsFormula}*100,0)`;
+    // 실출석률 = 순수출석/총회차
+    const realAttendanceRateFormula = `IF(${totalSessionsFormula}>0,(${attendedFormula})/${totalSessionsFormula},0)`;
 
     return {
       attended: totalAttendedFormula,

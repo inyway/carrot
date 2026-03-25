@@ -8,6 +8,8 @@ import { ConfigService } from '@nestjs/config';
 import { AttendanceMappingResult } from './types';
 import { SYNONYM_GROUPS, METADATA_FIELD_MAP } from './attendance-constants';
 
+const ATTENDANCE_VALUE_PATTERN = /^(Y|N|C|L|O|X|-|BZ|VA|출석|결석|지각|공결|중도입과)$/i;
+
 // --- Column normalization helpers ---
 
 function normalizeColName(name: string): string {
@@ -20,6 +22,7 @@ function stripCompositePrefix(name: string): string {
 
 function isAttendanceColumn(colName: string): boolean {
   const normalized = normalizeColName(colName);
+  if (/\((출결|일정)\)\s*$/.test(colName)) return true;
   // Exclude summary/aggregate columns first
   if (/출결|출석률|결석|합계|비고|미참석|출석\s*\(|공결/i.test(normalized)) return false;
   if (/(?<!\d)회차\s*$/i.test(normalized)) return false;
@@ -85,12 +88,28 @@ function extractDatesFromTemplateCol(colName: string): ParsedDate[] {
   while ((match = regex.exec(colName)) !== null) {
     dates.push({ month: parseInt(match[1], 10), day: parseInt(match[2], 10) });
   }
+  if (dates.length > 0) return dates;
+
+  const month = extractMonthFromDataCol(colName);
+  const bareDateRegex = /(\d{1,2})\s*\([A-Za-z]{2,3}\)/g;
+  while ((match = bareDateRegex.exec(colName)) !== null) {
+    dates.push({ month: month ?? undefined, day: parseInt(match[1], 10) });
+  }
   return dates;
 }
 
 function extractMonthFromDataCol(colName: string): number | null {
-  const match = colName.match(/(\d{1,2})월/);
-  return match ? parseInt(match[1], 10) : null;
+  const korMatch = colName.match(/(\d{1,2})월/);
+  if (korMatch) return parseInt(korMatch[1], 10);
+  const isoMatch = colName.match(/\d{4}-(\d{2})-\d{2}/);
+  if (isoMatch) return parseInt(isoMatch[1], 10);
+  const ENG_MONTHS: Record<string, number> = {
+    jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+    jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  };
+  const engMatch = colName.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i);
+  if (engMatch) return ENG_MONTHS[engMatch[1].toLowerCase()] ?? null;
+  return null;
 }
 
 function extractDayFromSampleValue(value: unknown): number | null {
@@ -98,6 +117,11 @@ function extractDayFromSampleValue(value: unknown): number | null {
   const str = String(value).trim();
   const match = str.match(/^(\d{1,2})\s*\(/);
   return match ? parseInt(match[1], 10) : null;
+}
+
+function isAttendanceValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  return ATTENDANCE_VALUE_PATTERN.test(String(value).trim());
 }
 
 /**
@@ -212,14 +236,46 @@ function findSynonymMatch(
   return null;
 }
 
+function mappingPriority(mapping: AttendanceMappingResult): number {
+  let score = Math.round((mapping.confidence || 0) * 100);
+
+  if (mapping.isMetadata) score += 50;
+  if (mapping.reason.includes('정확 일치')) score += 40;
+  if (mapping.reason.includes('메타데이터 매칭')) score += 35;
+  if (mapping.reason.includes('클래스명에서 추출')) score += 30;
+  if (mapping.reason.includes('필드맵 매칭')) score += 20;
+  if (mapping.reason.includes('날짜 매칭')) score += 20;
+  if (mapping.reason.includes('출결 요약')) score += 15;
+  if (mapping.reason.includes('부분 일치')) score += 5;
+
+  return score;
+}
+
+function dedupeMappings(mappings: AttendanceMappingResult[]): AttendanceMappingResult[] {
+  const bestByTemplateField = new Map<string, AttendanceMappingResult>();
+
+  for (const mapping of mappings) {
+    if (!mapping.templateField || !mapping.dataColumn) continue;
+
+    const existing = bestByTemplateField.get(mapping.templateField);
+    if (!existing || mappingPriority(mapping) > mappingPriority(existing)) {
+      bestByTemplateField.set(mapping.templateField, mapping);
+    }
+  }
+
+  return Array.from(bestByTemplateField.values());
+}
+
 @Injectable()
 export class AttendanceMappingService {
   private readonly geminiApiKey: string | undefined;
+  private readonly openaiApiKey: string | undefined;
   private readonly geminiApiUrl =
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
   constructor(private readonly configService: ConfigService) {
     this.geminiApiKey = this.configService.get<string>('GEMINI_API_KEY');
+    this.openaiApiKey = this.configService.get<string>('OPENAI_API_KEY');
   }
 
   /**
@@ -249,7 +305,7 @@ export class AttendanceMappingService {
       // Gemini fallback for unmapped non-attendance columns
       const mappedTemplates = new Set(mappings.map(m => m.templateField));
       const unmappedTemplates = templateColumns.filter(
-        t => !mappedTemplates.has(t) && !isAttendanceColumn(t) && !isSummaryColumn(t),
+        t => !mappedTemplates.has(t) && !isAttendanceColumn(t) && !isSummaryColumn(t) && normalizeColName(t) !== '비고',
       );
 
       if (unmappedTemplates.length > 0 && this.geminiApiKey) {
@@ -294,7 +350,7 @@ export class AttendanceMappingService {
     const mappedTemplates = new Set(mappings.map(m => m.templateField));
     const unmappedColumns = templateColumns.filter(t => !mappedTemplates.has(t));
 
-    return { mappings, unmappedColumns };
+    return { mappings: dedupeMappings(mappings), unmappedColumns };
   }
 
   // --- Static helpers exposed for testing ---
@@ -464,17 +520,31 @@ export class AttendanceMappingService {
           mappedTemplateFields.add(m.templateField);
         }
       } else {
-        // Fallback: positional matching
-        const matchCount = Math.min(templateAttendanceCols.length, dataAttendanceCols.length);
-        for (let i = 0; i < matchCount; i++) {
-          results.push({
-            templateField: templateAttendanceCols[i],
-            dataColumn: dataAttendanceCols[i],
-            confidence: 0.85,
-            reason: `출결 날짜 위치 매칭 (${i + 1}번째)`,
-          });
-          usedDataColumns.add(dataAttendanceCols[i]);
-          mappedTemplateFields.add(templateAttendanceCols[i]);
+        const monthSessionMatched = this.monthBasedAttendanceMapping(templateAttendanceCols, dataAttendanceCols);
+        if (monthSessionMatched.length > 0) {
+          for (const m of monthSessionMatched) {
+            results.push(m);
+            usedDataColumns.add(m.dataColumn);
+            mappedTemplateFields.add(m.templateField);
+          }
+        } else {
+          const hasMergedPairs = dataAttendanceCols.some(c => /\((출결|일정)\)$/.test(c));
+          let positionalDataCols = dataAttendanceCols;
+          if (hasMergedPairs) {
+            positionalDataCols = dataAttendanceCols.filter(c => /\(출결\)$/.test(c));
+          }
+          // Fallback: positional matching
+          const matchCount = Math.min(templateAttendanceCols.length, positionalDataCols.length);
+          for (let i = 0; i < matchCount; i++) {
+            results.push({
+              templateField: templateAttendanceCols[i],
+              dataColumn: positionalDataCols[i],
+              confidence: 0.85,
+              reason: `출결 날짜 위치 매칭 (${i + 1}번째)`,
+            });
+            usedDataColumns.add(positionalDataCols[i]);
+            mappedTemplateFields.add(templateAttendanceCols[i]);
+          }
         }
       }
     }
@@ -693,8 +763,31 @@ export class AttendanceMappingService {
 
     if (templateDateMap.size === 0) return [];
 
+    const hasMergedPairs = dataAttendanceCols.some(c => /\((출결|일정)\)$/.test(c));
+    const scheduleToAttendance = new Map<string, string>();
+    if (hasMergedPairs) {
+      const baseMap = new Map<string, { schedule?: string; attendance?: string }>();
+      for (const col of dataAttendanceCols) {
+        const isSchedule = /\(일정\)$/.test(col);
+        const isAttendance = /\(출결\)$/.test(col);
+        if (!isSchedule && !isAttendance) continue;
+
+        const base = col.replace(/\((출결|일정)\)$/, '').trim();
+        if (!baseMap.has(base)) baseMap.set(base, {});
+        if (isSchedule) baseMap.get(base)!.schedule = col;
+        if (isAttendance) baseMap.get(base)!.attendance = col;
+      }
+      baseMap.forEach(pair => {
+        if (pair.schedule && pair.attendance) {
+          scheduleToAttendance.set(pair.schedule, pair.attendance);
+        }
+      });
+    }
+
     const usedTemplateCols = new Set<string>();
     for (const dataCol of dataAttendanceCols) {
+      if (/\(출결\)$/.test(dataCol)) continue;
+
       const month = extractMonthFromDataCol(dataCol);
       if (!month) continue;
 
@@ -715,14 +808,94 @@ export class AttendanceMappingService {
         const dateKey = `${month}-${day}`;
         const matchedTemplateCol = templateDateMap.get(dateKey);
         if (matchedTemplateCol) {
+          if (usedTemplateCols.has(matchedTemplateCol)) {
+            continue;
+          }
+
+          let actualDataCol = scheduleToAttendance.get(dataCol);
+          if (!actualDataCol) {
+            const sampleValues = (dataSampleData || [])
+              .map(row => row[dataCol])
+              .filter(value => value !== undefined && value !== null);
+            const hasDateLikeSample = sampleValues.some(value => extractDayFromSampleValue(value) !== null);
+            const hasAttendanceLikeSample = sampleValues.some(value => isAttendanceValue(value));
+
+            if (hasDateLikeSample && !hasAttendanceLikeSample) {
+              continue;
+            }
+
+            actualDataCol = dataCol;
+          }
+
           results.push({
             templateField: matchedTemplateCol,
-            dataColumn: dataCol,
-            confidence: usedTemplateCols.has(matchedTemplateCol) ? 0.85 : 0.95,
+            dataColumn: actualDataCol,
+            confidence: 0.95,
             reason: `날짜 매칭 (${month}월 ${day}일)`,
           });
           usedTemplateCols.add(matchedTemplateCol);
         }
+      }
+    }
+
+    return results;
+  }
+
+  private monthBasedAttendanceMapping(
+    templateAttendanceCols: string[],
+    dataAttendanceCols: string[],
+  ): AttendanceMappingResult[] {
+    const templateByMonth = new Map<number, string[]>();
+    let templateMonthCount = 0;
+    for (const col of templateAttendanceCols) {
+      const month = extractMonthFromDataCol(col);
+      if (!month) continue;
+      templateMonthCount++;
+      if (!templateByMonth.has(month)) templateByMonth.set(month, []);
+      templateByMonth.get(month)!.push(col);
+    }
+
+    if (templateMonthCount < templateAttendanceCols.length * 0.5) return [];
+
+    const hasMergedPairs = dataAttendanceCols.some(c => /\((출결|일정)\)$/.test(c));
+    const matchableDataCols = hasMergedPairs
+      ? dataAttendanceCols.filter(c => /\(출결\)$/.test(c))
+      : dataAttendanceCols;
+
+    const dataByMonth = new Map<number, string[]>();
+    let dataMonthCount = 0;
+    for (const col of matchableDataCols) {
+      const month = extractMonthFromDataCol(col);
+      if (!month) continue;
+      dataMonthCount++;
+      if (!dataByMonth.has(month)) dataByMonth.set(month, []);
+      dataByMonth.get(month)!.push(col);
+    }
+
+    if (dataMonthCount < matchableDataCols.length * 0.5) return [];
+
+    let hasOverlap = false;
+    for (const month of Array.from(templateByMonth.keys())) {
+      if (dataByMonth.has(month)) {
+        hasOverlap = true;
+        break;
+      }
+    }
+    if (!hasOverlap) return [];
+
+    const results: AttendanceMappingResult[] = [];
+    for (const [month, templateCols] of Array.from(templateByMonth.entries())) {
+      const dataCols = dataByMonth.get(month);
+      if (!dataCols) continue;
+
+      const matchCount = Math.min(templateCols.length, dataCols.length);
+      for (let i = 0; i < matchCount; i++) {
+        results.push({
+          templateField: templateCols[i],
+          dataColumn: dataCols[i],
+          confidence: 0.9,
+          reason: `월 기반 매칭 (${month}월 ${i + 1}번째)`,
+        });
       }
     }
 
@@ -779,8 +952,6 @@ export class AttendanceMappingService {
     templateSampleData?: Record<string, unknown>[],
     dataSampleData?: Record<string, unknown>[],
   ): Promise<AttendanceMappingResult[]> {
-    if (!this.geminiApiKey) return [];
-
     const templateSampleStr =
       templateSampleData && templateSampleData.length > 0
         ? '\n\n템플릿 샘플 데이터 (첫 2행):\n' +
@@ -825,30 +996,80 @@ ${dataSampleStr}
   {"templateField": "템플릿필드명", "dataColumn": "데이터컬럼명", "confidence": 0.9, "reason": "매칭 이유"}
 ]`;
 
-    const response = await fetch(`${this.geminiApiUrl}?key=${this.geminiApiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, topK: 40, topP: 0.95, maxOutputTokens: 4096 },
-      }),
-    });
+    const parseAiMappingResponse = (text: string, provider: string): AttendanceMappingResult[] => {
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        throw new Error(`Failed to parse ${provider} response as JSON array`);
+      }
 
-    if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`);
+      const parsed: AttendanceMappingResult[] = JSON.parse(jsonMatch[0]);
+      const templateSet = new Set(templateColumns);
+      const dataSet = new Set(dataColumns);
+      const templateNormMap = new Map<string, string>();
+      for (const t of templateColumns) templateNormMap.set(normalizeColName(t).toLowerCase().trim(), t);
+      const dataNormMap = new Map<string, string>();
+      for (const d of dataColumns) dataNormMap.set(normalizeColName(d).toLowerCase().trim(), d);
+
+      return parsed
+        .map(m => {
+          let tField = templateSet.has(m.templateField) ? m.templateField : null;
+          let dCol = dataSet.has(m.dataColumn) ? m.dataColumn : null;
+          if (!tField) tField = templateNormMap.get(normalizeColName(m.templateField).toLowerCase().trim()) || null;
+          if (!dCol) dCol = dataNormMap.get(normalizeColName(m.dataColumn).toLowerCase().trim()) || null;
+          return tField && dCol ? { ...m, templateField: tField, dataColumn: dCol } : null;
+        })
+        .filter((m): m is AttendanceMappingResult => m !== null);
+    };
+
+    if (this.geminiApiKey) {
+      try {
+        const response = await fetch(`${this.geminiApiUrl}?key=${this.geminiApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.1, topK: 40, topP: 0.95, maxOutputTokens: 4096 },
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Gemini API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error('Gemini API returned empty response');
+        return parseAiMappingResponse(text, 'Gemini');
+      } catch (error) {
+        console.error('[AttendanceMappingService] Gemini AI mapping failed:', error);
+      }
     }
 
-    const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error('Gemini API returned empty response');
+    if (this.openaiApiKey) {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.openaiApiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.1,
+          max_tokens: 4096,
+        }),
+      });
 
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) throw new Error('Failed to parse Gemini response as JSON array');
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.status}`);
+      }
 
-    const parsed: AttendanceMappingResult[] = JSON.parse(jsonMatch[0]);
-    const templateSet = new Set(templateColumns);
-    const dataSet = new Set(dataColumns);
+      const data = await response.json();
+      const text = data.choices?.[0]?.message?.content;
+      if (!text) throw new Error('OpenAI returned empty response');
+      return parseAiMappingResponse(text, 'OpenAI');
+    }
 
-    return parsed.filter(m => templateSet.has(m.templateField) && dataSet.has(m.dataColumn));
+    return [];
   }
 }

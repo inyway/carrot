@@ -536,17 +536,13 @@ export class AttendanceReportGraphService {
       ) => {
         const dataStartRow = templateDataStartRow;
 
-        // Template column index map — read from the row above dataStartRow
+        // Template column index map — use the same composite header detection as parse stage
         const templateColMap = new Map<string, number>();
-        // Scan header rows (all rows from 1 to dataStartRow-1) to build column map
-        for (let r = 1; r < dataStartRow; r++) {
-          const headerRow = sheet.getRow(r);
-          headerRow.eachCell({ includeEmpty: false }, (cell: any, colNumber: number) => {
-            const text = this.getCellText(cell);
-            if (text && !templateColMap.has(text)) {
-              templateColMap.set(text, colNumber);
-            }
-          });
+        const sheetHeader = this.detectMultiRowHeader(sheet);
+        for (const hc of sheetHeader.hierarchicalColumns) {
+          if (!templateColMap.has(hc.name)) {
+            templateColMap.set(hc.name, hc.colIndex);
+          }
         }
 
         // Break shared formulas in the data area before overwriting
@@ -622,7 +618,11 @@ export class AttendanceReportGraphService {
           for (const [field, formulaKey] of Object.entries(summaryFieldMap)) {
             const colNum = templateColMap.get(field);
             if (colNum && student.formulas[formulaKey]) {
-              row.getCell(colNum).value = { formula: student.formulas[formulaKey] } as any;
+              const rawResult = student.calculated[formulaKey];
+              const result = formulaKey === 'attendanceRate' || formulaKey === 'realAttendanceRate'
+                ? rawResult / 100
+                : rawResult;
+              row.getCell(colNum).value = { formula: student.formulas[formulaKey], result } as any;
             }
           }
 
@@ -726,6 +726,32 @@ export class AttendanceReportGraphService {
       rowInfos.push({ rowNum, cells, nonEmptyCount });
     }
 
+    const isDataLikeRow = (info: typeof rowInfos[number]): boolean => {
+      let emailCount = 0;
+      let attendanceCount = 0;
+      let dateLikeCount = 0;
+      let longTextCount = 0;
+      let numericCount = 0;
+
+      for (const text of info.cells.values()) {
+        const trimmed = text.trim();
+        if (!trimmed) continue;
+        if (trimmed.includes('@') && trimmed.includes('.')) emailCount++;
+        if (/^(Y|N|C|L|O|X|-|BZ|VA)$/i.test(trimmed)) attendanceCount++;
+        if (/^\d{1,2}\s*\([A-Za-z]{2,3}\)$/.test(trimmed) || /^\d{1,2}월\s*\d{1,2}일$/.test(trimmed)) {
+          dateLikeCount++;
+        }
+        if (trimmed.length >= 25) longTextCount++;
+        if (/^\d+(\.\d+)?$/.test(trimmed)) numericCount++;
+      }
+
+      if (emailCount >= 1) return true;
+      if (attendanceCount >= 3) return true;
+      if (longTextCount >= 2) return true;
+      if (dateLikeCount >= 4 && numericCount >= 2) return true;
+      return false;
+    };
+
     // Group consecutive dense rows (3+ non-empty cells)
     const groups: Array<typeof rowInfos> = [];
     let currentGroup: typeof rowInfos = [];
@@ -775,22 +801,31 @@ export class AttendanceReportGraphService {
       }
     }
 
+    const truncatedGroup: typeof bestGroup = [];
+    for (const info of bestGroup) {
+      if (truncatedGroup.length > 0 && isDataLikeRow(info)) {
+        break;
+      }
+      truncatedGroup.push(info);
+    }
+    const effectiveGroup = truncatedGroup.length > 0 ? truncatedGroup : [bestGroup[0]];
+
     // Determine if this is a multi-row header vs single-row
     // A group with rows where upper rows have FEWER cells than lower rows → hierarchical header
-    const headerRows = bestGroup.map(g => g.rowNum);
-    const lastHeaderInfo = bestGroup[bestGroup.length - 1];
+    const headerRows = effectiveGroup.map(g => g.rowNum);
+    const lastHeaderInfo = effectiveGroup[effectiveGroup.length - 1];
     const dataStartRow = lastHeaderInfo.rowNum + 1;
 
     // Build column names from the leaf (last) header row
     // For multi-row headers, build hierarchical path
-    const maxCol = Math.max(...bestGroup.flatMap(g => Array.from(g.cells.keys())));
+    const maxCol = Math.max(...effectiveGroup.flatMap(g => Array.from(g.cells.keys())));
     const columns: string[] = [];
     const hierarchicalColumns: HierarchicalColumn[] = [];
     // Track which column indices we've already seen via sparse array
     const colNames = new Array<string>(maxCol + 1).fill('');
 
     // For single-row headers, just use that row
-    if (bestGroup.length === 1) {
+    if (effectiveGroup.length === 1) {
       for (const [colIdx, text] of lastHeaderInfo.cells) {
         colNames[colIdx] = text;
       }
@@ -800,7 +835,7 @@ export class AttendanceReportGraphService {
       // Handle merged cells: if a row doesn't have a value at colIdx, inherit from nearest left cell in same row
       const rowMergedValues: Map<number, Map<number, string>> = new Map();
 
-      for (const info of bestGroup) {
+      for (const info of effectiveGroup) {
         const merged = new Map<number, string>();
         let lastVal = '';
         for (let col = 1; col <= maxCol; col++) {
@@ -821,7 +856,7 @@ export class AttendanceReportGraphService {
         if (!leafText) continue;
 
         const path: string[] = [];
-        for (const info of bestGroup) {
+        for (const info of effectiveGroup) {
           const mergedMap = rowMergedValues.get(info.rowNum);
           const val = mergedMap?.get(colIdx);
           if (val) path.push(val);
@@ -842,7 +877,7 @@ export class AttendanceReportGraphService {
       if (colNames[i] && colNames[i].length > 0) {
         columns.push(colNames[i]);
         // Add hierarchical info for single-row case too
-        if (bestGroup.length === 1) {
+        if (effectiveGroup.length === 1) {
           hierarchicalColumns.push({ name: colNames[i], colIndex: i });
         }
       }
