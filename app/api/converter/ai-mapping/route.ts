@@ -183,12 +183,83 @@ function extractDatesFromTemplateCol(colName: string): ParsedDate[] {
 }
 
 /**
- * Extract month from raw data column name.
- * e.g. "12월_1회차" → 12, "9월_3회차" → 9
+ * Extract month from column name (supports multiple formats).
+ * e.g. "12월_1회차" → 12, "1 Week_1_2026-01-05" → 1, "Mon Jan 05 2026" → 1
  */
+function extractMonthFromCol(colName: string): number | null {
+  const korMatch = colName.match(/(\d{1,2})월/);
+  if (korMatch) return parseInt(korMatch[1], 10);
+  const isoMatch = colName.match(/\d{4}-(\d{2})-\d{2}/);
+  if (isoMatch) return parseInt(isoMatch[1], 10);
+  const ENG_MONTHS: Record<string, number> = {
+    jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+    jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  };
+  const engMatch = colName.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i);
+  if (engMatch) return ENG_MONTHS[engMatch[1].toLowerCase()] ?? null;
+  return null;
+}
+
 function extractMonthFromDataCol(colName: string): number | null {
-  const match = colName.match(/(\d{1,2})월/);
-  return match ? parseInt(match[1], 10) : null;
+  return extractMonthFromCol(colName);
+}
+
+/**
+ * Month-based attendance column matching.
+ * Groups template and data columns by month, matches within each month by position.
+ */
+function monthBasedAttendanceMapping(
+  templateAttendanceCols: string[],
+  dataAttendanceCols: string[],
+): MappingResult[] {
+  const templateByMonth = new Map<number, string[]>();
+  let templateMonthCount = 0;
+  for (const col of templateAttendanceCols) {
+    const month = extractMonthFromCol(col);
+    if (!month) continue;
+    templateMonthCount++;
+    if (!templateByMonth.has(month)) templateByMonth.set(month, []);
+    templateByMonth.get(month)!.push(col);
+  }
+  if (templateMonthCount < templateAttendanceCols.length * 0.5) return [];
+
+  const hasMergedPairs = dataAttendanceCols.some(c => /\((출결|일정)\)$/.test(c));
+  const matchableDataCols = hasMergedPairs
+    ? dataAttendanceCols.filter(c => /\(출결\)$/.test(c))
+    : dataAttendanceCols;
+
+  const dataByMonth = new Map<number, string[]>();
+  let dataMonthCount = 0;
+  for (const col of matchableDataCols) {
+    const month = extractMonthFromCol(col);
+    if (!month) continue;
+    dataMonthCount++;
+    if (!dataByMonth.has(month)) dataByMonth.set(month, []);
+    dataByMonth.get(month)!.push(col);
+  }
+  if (dataMonthCount < matchableDataCols.length * 0.5) return [];
+
+  let hasOverlap = false;
+  for (const month of Array.from(templateByMonth.keys())) {
+    if (dataByMonth.has(month)) { hasOverlap = true; break; }
+  }
+  if (!hasOverlap) return [];
+
+  const results: MappingResult[] = [];
+  for (const [month, templateCols] of Array.from(templateByMonth.entries())) {
+    const dataCols = dataByMonth.get(month);
+    if (!dataCols) continue;
+    const matchCount = Math.min(templateCols.length, dataCols.length);
+    for (let i = 0; i < matchCount; i++) {
+      results.push({
+        templateField: templateCols[i],
+        dataColumn: dataCols[i],
+        confidence: 0.9,
+        reason: `월 기반 매칭 (${month}월 ${i + 1}번째)`,
+      });
+    }
+  }
+  return results;
 }
 
 /**
@@ -479,17 +550,30 @@ function attendanceAwareMapping(
         mappedTemplateFields.add(m.templateField);
       }
     } else {
-      // Fallback: positional matching
-      const matchCount = Math.min(templateAttendanceCols.length, dataAttendanceCols.length);
-      for (let i = 0; i < matchCount; i++) {
-        results.push({
-          templateField: templateAttendanceCols[i],
-          dataColumn: dataAttendanceCols[i],
-          confidence: 0.85,
-          reason: `출결 날짜 위치 매칭 (${i + 1}번째)`,
-        });
-        usedDataColumns.add(dataAttendanceCols[i]);
-        mappedTemplateFields.add(templateAttendanceCols[i]);
+      // Try month-based matching before positional fallback
+      const monthMatched = monthBasedAttendanceMapping(
+        templateAttendanceCols, dataAttendanceCols
+      );
+
+      if (monthMatched.length > 0) {
+        for (const m of monthMatched) {
+          results.push(m);
+          usedDataColumns.add(m.dataColumn);
+          mappedTemplateFields.add(m.templateField);
+        }
+      } else {
+        // Fallback: positional matching
+        const matchCount = Math.min(templateAttendanceCols.length, dataAttendanceCols.length);
+        for (let i = 0; i < matchCount; i++) {
+          results.push({
+            templateField: templateAttendanceCols[i],
+            dataColumn: dataAttendanceCols[i],
+            confidence: 0.85,
+            reason: `출결 날짜 위치 매칭 (${i + 1}번째)`,
+          });
+          usedDataColumns.add(dataAttendanceCols[i]);
+          mappedTemplateFields.add(templateAttendanceCols[i]);
+        }
       }
     }
   }

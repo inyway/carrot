@@ -1347,6 +1347,41 @@ export default function ConverterPage() {
                       </p>
                     </div>
                   )}
+
+                  {/* 수동 매핑 드롭다운 */}
+                  {!autoMapping && (
+                    <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                      {(templateFile.placeholders || templateFile.columns || []).map((field, idx) => {
+                        const mapping = mappings.find(m => m.templateField === field);
+                        return (
+                          <div key={idx} className="flex items-center gap-3">
+                            <div className="flex-1 px-3 py-2 bg-orange-50 rounded-lg text-sm text-gray-700 truncate" title={field}>
+                              {field}
+                            </div>
+                            <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                            </svg>
+                            <select
+                              value={mapping?.dataColumn || ''}
+                              onChange={(e) => handleMappingChange(field, e.target.value)}
+                              className={`flex-1 px-3 py-2 border rounded-lg text-sm ${
+                                mapping?.dataColumn
+                                  ? mapping.confidence && mapping.confidence < 1
+                                    ? 'border-yellow-300 bg-yellow-50'
+                                    : 'border-green-300 bg-green-50'
+                                  : 'border-gray-300'
+                              }`}
+                            >
+                              <option value="">-- 선택 --</option>
+                              {(dataFile.columns || []).map((col, colIdx) => (
+                                <option key={colIdx} value={col}>{col}</option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
