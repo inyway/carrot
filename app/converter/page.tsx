@@ -233,6 +233,7 @@ export default function ConverterPage() {
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [generatedZipBlob, setGeneratedZipBlob] = useState<Blob | null>(null);
+  const [generatedFileName, setGeneratedFileName] = useState<string>('');
   const [lastHwpxMappings, setLastHwpxMappings] = useState<Array<{ excelColumn: string; hwpxRow: number; hwpxCol: number }>>([]);
   // 검증 단계 상태: idle(초기) → waiting(매핑완료,생성대기) → running(검증중) → complete(완료)
   const [verificationPhase, setVerificationPhase] = useState<'idle' | 'waiting' | 'running' | 'complete'>('idle');
@@ -937,9 +938,9 @@ export default function ConverterPage() {
         // 다운로드는 검증 결과 확인 후 사용자가 직접 클릭하도록 함
         // (generatedZipBlob 상태에 저장되어 있으므로 다운로드 버튼에서 처리)
       } else {
-        // HWPX가 아닌 경우 바로 다운로드
-        downloadBlob(blob, fileName);
-        alert('보고서 생성이 완료되었습니다!');
+        // HWPX가 아닌 경우 blob 저장 (다운로드 버튼으로 수동 다운로드)
+        setGeneratedZipBlob(blob);
+        setGeneratedFileName(fileName);
       }
 
     } catch (error) {
@@ -1345,6 +1346,34 @@ export default function ConverterPage() {
                     </div>
                   )}
 
+                  {/* 일괄 (일정)↔(출결) 변환 버튼 */}
+                  {!autoMapping && mappings.some(m => m.dataColumn && (/\(일정\)$/.test(m.dataColumn) || /\(출결\)$/.test(m.dataColumn))) && (
+                    <div className="flex gap-2 mb-3">
+                      <button
+                        onClick={() => {
+                          setMappings(prev => prev.map(m => ({
+                            ...m,
+                            dataColumn: m.dataColumn.replace(/\(일정\)$/, '(출결)'),
+                          })));
+                        }}
+                        className="flex-1 px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-lg text-xs font-medium hover:bg-green-100 transition-all"
+                      >
+                        일괄 (출결)로 변경
+                      </button>
+                      <button
+                        onClick={() => {
+                          setMappings(prev => prev.map(m => ({
+                            ...m,
+                            dataColumn: m.dataColumn.replace(/\(출결\)$/, '(일정)'),
+                          })));
+                        }}
+                        className="flex-1 px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-medium hover:bg-blue-100 transition-all"
+                      >
+                        일괄 (일정)로 변경
+                      </button>
+                    </div>
+                  )}
+
                   {/* 수동 매핑 드롭다운 */}
                   {!autoMapping && (
                     <div className="space-y-3 max-h-[400px] overflow-y-auto">
@@ -1696,40 +1725,33 @@ export default function ConverterPage() {
 
               {/* 메인 액션 버튼 - 상태에 따라 변경 */}
               <div className="space-y-3">
-                {/* 검증 완료 후: 다운로드 버튼 */}
-                {generatedZipBlob && verificationResult && !generating && !verifying ? (
+                {/* 생성 완료 후: 다운로드 버튼 */}
+                {generatedZipBlob && !generating && !verifying ? (
                   <div className="space-y-2">
                     <button
                       onClick={() => {
-                        const fileName = `reports_${new Date().toISOString().slice(0, 10)}.zip`;
+                        const fileName = generatedFileName || `report_${Date.now()}.xlsx`;
                         downloadBlob(generatedZipBlob, fileName);
                       }}
                       className={`w-full py-4 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
-                        verificationResult.status === 'pass'
-                          ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white'
-                          : verificationResult.status === 'warning'
-                            ? 'bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white'
-                            : 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white'
+                        verificationResult
+                          ? verificationResult.status === 'pass'
+                            ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white'
+                            : verificationResult.status === 'warning'
+                              ? 'bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white'
+                              : 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white'
+                          : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white'
                       }`}
                     >
-                      {verificationResult.status === 'pass' ? (
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                      )}
-                      {verificationResult.status === 'pass'
-                        ? `검증 통과 - 다운로드 (${dataFile?.rowCount || 0}개)`
-                        : verificationResult.status === 'warning'
-                          ? `주의사항 확인 후 다운로드 (${dataFile?.rowCount || 0}개)`
-                          : `문제 확인 후 다운로드 (${dataFile?.rowCount || 0}개)`}
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      다운로드 ({dataFile?.rowCount || 0}건)
                     </button>
                     <button
                       onClick={() => {
                         setGeneratedZipBlob(null);
+                        setGeneratedFileName('');
                         setVerificationResult(null);
                         setVerificationPhase('idle');
                       }}

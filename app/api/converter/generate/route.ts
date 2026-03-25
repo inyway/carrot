@@ -286,6 +286,14 @@ async function extractExcelData(
 
   // 교대 패턴(이메일 행 + 출결 행) 감지 및 병합
   const merged = mergePairedRows(data, columns);
+  console.log('[generate] Before merge:', columns.length, 'cols,', data.length, 'rows');
+  console.log('[generate] After merge:', merged.columns.length, 'cols,', merged.rows.length, 'rows');
+  const attCols = merged.columns.filter(c => /출결\)$/.test(c));
+  console.log('[generate] (출결) columns:', attCols.length, attCols.slice(0, 3));
+  if (merged.rows[0]) {
+    const sampleKey = attCols[0] || merged.columns.find(c => /월.*회차/.test(c)) || '';
+    console.log('[generate] Sample key:', sampleKey, '=', JSON.stringify(merged.rows[0][sampleKey]));
+  }
   return { columns: merged.columns, data: merged.rows };
 }
 
