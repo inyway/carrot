@@ -91,6 +91,40 @@ function columnNumberToName(columnNumber: number): string {
   return result;
 }
 
+function normalizeAttendanceSymbol(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value).trim().toUpperCase();
+}
+
+function calculateSummaryResult(
+  formulaKey: SummaryFormulaKey,
+  attendanceValues: unknown[],
+): number {
+  const normalized = attendanceValues
+    .map(normalizeAttendanceSymbol)
+    .filter(Boolean);
+
+  const totalSessions = normalized.length;
+  const attended = normalized.filter(value => value === 'Y' || value === 'L').length;
+  const absent = normalized.filter(value => value === 'N' || value === 'C').length;
+  const excused = normalized.filter(value => value === 'BZ' || value === 'VA').length;
+
+  switch (formulaKey) {
+    case 'totalSessions':
+      return totalSessions;
+    case 'attended':
+      return attended;
+    case 'absent':
+      return absent;
+    case 'excused':
+      return excused;
+    case 'realAttendanceRate':
+      return totalSessions > 0 ? attended / totalSessions : 0;
+    case 'attendanceRate':
+      return totalSessions > 0 ? (attended + excused) / totalSessions : 0;
+  }
+}
+
 function buildRowAttendanceMap(
   rowData: Record<string, unknown>,
   dataColumns: string[],
@@ -186,9 +220,9 @@ function buildSummaryFormula(
     case 'excused':
       return { formula: excusedFormula };
     case 'realAttendanceRate':
-      return { formula: `IF(${totalFormula}>0,(${attendedFormula})/${totalFormula}*100,0)` };
+      return { formula: `IF(${totalFormula}>0,(${attendedFormula})/${totalFormula},0)` };
     case 'attendanceRate':
-      return { formula: `IF(${totalFormula}>0,(${attendedFormula}+${excusedFormula})/${totalFormula}*100,0)` };
+      return { formula: `IF(${totalFormula}>0,(${attendedFormula}+${excusedFormula})/${totalFormula},0)` };
   }
 }
 
@@ -497,6 +531,7 @@ async function generateExcelReports(
     const targetRowNum = firstDataRow + rowIdx;
     const targetRow = ws.getRow(targetRowNum);
     const rowAttendanceMap = isAttendanceReport ? buildRowAttendanceMap(rowData, dataColumns) : null;
+    const resolvedAttendanceValues: unknown[] = [];
 
     // 매핑에 따라 데이터 채우기
     for (const [templateField, dataColumn] of Array.from(mappingMap.entries())) {
@@ -518,6 +553,10 @@ async function generateExcelReports(
         const value = isAttendanceReport && attendanceFieldSet.has(templateField)
           ? resolveAttendanceSymbolForTemplateField(templateField, rowAttendanceMap || new Map(), rowData[dataColumn])
           : rowData[dataColumn];
+
+        if (isAttendanceReport && attendanceFieldSet.has(templateField) && !isBlankCellValue(value)) {
+          resolvedAttendanceValues.push(value);
+        }
 
         if (isBlankCellValue(value)) {
           cell.value = null;
@@ -546,7 +585,10 @@ async function generateExcelReports(
         if (!colIndex) continue;
 
         const cell = targetRow.getCell(colIndex);
-        cell.value = buildSummaryFormula(formulaKey, rowAttendanceRange);
+        cell.value = {
+          ...buildSummaryFormula(formulaKey, rowAttendanceRange),
+          result: calculateSummaryResult(formulaKey, resolvedAttendanceValues),
+        };
         const style = styleCache.get(colIndex);
         if (style) {
           cell.style = style as ExcelJS.Style;
