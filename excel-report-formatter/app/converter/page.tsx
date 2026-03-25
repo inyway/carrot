@@ -181,27 +181,8 @@ export default function ConverterPage() {
   // 매핑 컨텍스트 (AI 매핑에 참고할 도메인 정보)
   const [mappingContext, setMappingContext] = useState<MappingContext | null>(null);
 
-  // 양쪽 파일 모두 분석 완료 시 자동 매핑 트리거 (파일 업로드 순서 무관)
-  const autoMappingTriggered = useRef(false);
-  useEffect(() => {
-    // 양쪽 파일이 모두 있고, columns/placeholders가 분석 완료 상태이고,
-    // 아직 매핑이 없고, 자동 매핑이 진행 중이 아닐 때
-    const templateReady = templateFile && (templateFile.placeholders?.length || templateFile.columns?.length);
-    const dataReady = dataFile && dataFile.columns?.length;
-
-    if (templateReady && dataReady && mappings.length === 0 && !autoMapping && !analyzingTemplate && !analyzingData) {
-      if (!autoMappingTriggered.current) {
-        autoMappingTriggered.current = true;
-        // 다음 tick에서 호출 (state 업데이트 완료 후)
-        setTimeout(() => handleAutoMapping(), 0);
-      }
-    }
-  }, [templateFile, dataFile, mappings.length, autoMapping, analyzingTemplate, analyzingData]);
-
-  // 파일이 변경되면 autoMapping 트리거 리셋
-  useEffect(() => {
-    autoMappingTriggered.current = false;
-  }, [templateFile?.name, dataFile?.name]);
+  // 양쪽 파일 분석 완료 시 자동 매핑을 위한 pending flag
+  const pendingAutoMapping = useRef(false);
 
   // 드래그 앤 드롭 상태
   const [dragOverTemplate, setDragOverTemplate] = useState(false);
@@ -284,6 +265,11 @@ export default function ConverterPage() {
       setAnalyzingTemplate(false);
     }
 
+    // 데이터 파일이 이미 분석 완료되어 있으면 자동 매핑 예약
+    if (dataFile?.columns?.length) {
+      pendingAutoMapping.current = true;
+    }
+
     if (templateInputRef.current) {
       templateInputRef.current.value = '';
     }
@@ -345,6 +331,11 @@ export default function ConverterPage() {
       console.error('Data analyze error:', error);
     } finally {
       setAnalyzingData(false);
+    }
+
+    // 템플릿이 이미 분석 완료되어 있으면 자동 매핑 예약
+    if (templateFile?.columns?.length || templateFile?.placeholders?.length) {
+      pendingAutoMapping.current = true;
     }
 
     if (dataInputRef.current) {
@@ -680,6 +671,14 @@ export default function ConverterPage() {
       setAutoMapping(false);
     }
   };
+
+  // 양쪽 파일 분석 완료 후 자동 매핑 트리거
+  useEffect(() => {
+    if (pendingAutoMapping.current && !autoMapping && !analyzingTemplate && !analyzingData && mappings.length === 0) {
+      pendingAutoMapping.current = false;
+      handleAutoMapping();
+    }
+  });
 
   // 매핑 수정
   const handleMappingChange = (templateField: string, dataColumn: string) => {
