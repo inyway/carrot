@@ -551,13 +551,43 @@ async function generateExcelReports(
     }
 
     if (isAttendanceReport && attendanceRange) {
+      // Count attendance values for this row to cache formula results
+      let yCount = 0, nCount = 0, lCount = 0, cCount = 0, bzCount = 0, vaCount = 0, totalCount = 0;
+      for (const colNum of attendanceColumnNumbers) {
+        const v = String(targetRow.getCell(colNum).value || '').trim().toUpperCase();
+        if (v) totalCount++;
+        if (v === 'Y') yCount++;
+        if (v === 'N') nCount++;
+        if (v === 'L') lCount++;
+        if (v === 'C') cCount++;
+        if (v === 'BZ') bzCount++;
+        if (v === 'VA') vaCount++;
+      }
+      const attended = yCount + lCount;
+      const absent = nCount + cCount;
+      const excused = bzCount + vaCount;
+      const realRate = totalCount > 0 ? Math.round(attended / totalCount * 100) : 0;
+      const fullRate = totalCount > 0 ? Math.round((attended + excused) / totalCount * 100) : 0;
+
       const rowAttendanceRange = attendanceRange.replace(`${firstDataRow}`, `${targetRowNum}`).replace(`${firstDataRow}`, `${targetRowNum}`);
       for (const [templateField, formulaKey] of Array.from(summaryFormulaMap.entries())) {
         const colIndex = templateColumnIndex.get(templateField);
         if (!colIndex) continue;
 
         const cell = targetRow.getCell(colIndex);
-        cell.value = buildSummaryFormula(formulaKey, rowAttendanceRange);
+        const formulaValue = buildSummaryFormula(formulaKey, rowAttendanceRange);
+
+        // Add cached result so the value shows even without Excel recalculation
+        const resultMap: Record<SummaryFormulaKey, number> = {
+          totalSessions: totalCount,
+          attended,
+          absent,
+          excused,
+          realAttendanceRate: realRate,
+          attendanceRate: fullRate,
+        };
+        cell.value = { ...formulaValue, result: resultMap[formulaKey] };
+
         const style = styleCache.get(colIndex);
         if (style) {
           cell.style = style as ExcelJS.Style;
