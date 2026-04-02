@@ -23,3 +23,4 @@ export type {
   RowError,
   GenerationStats,
 } from './unified-generator.service';
+export { ConverterMappingService } from './converter-mapping.service';
