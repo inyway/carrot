@@ -9,3 +9,4 @@ export * from './hwpx.controller';
 export * from './unified-generate.controller';
 export * from './attendance-report.controller';
 export * from './attendance-rule.controller';
+export * from './converter-mapping.controller';

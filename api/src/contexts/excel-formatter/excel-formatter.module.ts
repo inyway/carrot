@@ -12,6 +12,7 @@ import {
   UnifiedGenerateController,
   AttendanceReportController,
   AttendanceRuleController,
+  ConverterMappingController,
 } from './interface/http/controllers';
 import {
   MappingService,
@@ -27,6 +28,7 @@ import {
   AttendanceMappingService,
   AttendanceCalculationService,
   AttendanceReportGraphService,
+  ConverterMappingService,
 } from './application/services';
 import {
   HeaderDetectionAgent,
@@ -71,6 +73,7 @@ import {
     UnifiedGenerateController,
     AttendanceReportController,
     AttendanceRuleController,
+    ConverterMappingController,
   ],
   providers: [
     MappingService,
@@ -121,6 +124,7 @@ import {
     AttendanceMappingService,
     AttendanceCalculationService,
     AttendanceReportGraphService,
+    ConverterMappingService,
     PrismaAttendanceRuleAdapter,
     {
       provide: ATTENDANCE_RULE_REPOSITORY_PORT,
