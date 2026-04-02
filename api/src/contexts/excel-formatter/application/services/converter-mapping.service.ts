@@ -41,13 +41,16 @@ function stripCompositePrefix(name: string): string {
 /** Detect if a column is an attendance date column (e.g. "4월_1회차_14 (Mo)", "1 Week_1_09월 29일", "12월_1회차") */
 function isAttendanceColumn(colName: string): boolean {
   const normalized = normalizeColName(colName);
+  // Strip mergePairedRows suffixes before classification
+  // "(출결)" and "(일정)" are added by the merge process, not part of the original column name
+  const stripped = normalized.replace(/\((출결|일정)\)\s*$/i, '').trim();
   // Must contain a numeric + time-related keyword
-  if (!/\d+\s*(week|월|회차)/i.test(normalized)) return false;
+  if (!/\d+\s*(week|월|회차)/i.test(stripped)) return false;
   // Must NOT be a summary column (출석률, 결석 등)
   // "회차" alone (e.g. "출결현황_회차") is summary, but "N회차" (e.g. "12월_1회차") is attendance
-  if (/출결|출석률|결석|합계|비고|미참석|출석\s*\(|공결/i.test(normalized)) return false;
+  if (/출결|출석률|결석|합계|비고|미참석|출석\s*\(|공결/i.test(stripped)) return false;
   // Pure "회차" without a preceding number = summary column
-  if (/(?<!\d)회차\s*$/i.test(normalized)) return false;
+  if (/(?<!\d)회차\s*$/i.test(stripped)) return false;
   return true;
 }
 
@@ -336,9 +339,16 @@ function dateBasedAttendanceMapping(
     return []; // Template doesn't have parseable dates, fall back to positional
   }
 
+  // When merged pairs exist (일정/출결), use (일정) columns for date extraction
+  // but MAP to the corresponding (출결) column for actual data
+  const hasMergedPairs = dataAttendanceCols.some(c => /\((출결|일정)\)$/.test(c));
+  const dateSourceCols = hasMergedPairs
+    ? dataAttendanceCols.filter(c => /\(일정\)$/.test(c))
+    : dataAttendanceCols;
+
   // Build raw data date index
   const usedTemplateCols = new Set<string>();
-  for (const dataCol of dataAttendanceCols) {
+  for (const dataCol of dateSourceCols) {
     const month = extractMonthFromDataCol(dataCol);
     if (!month) continue;
 
@@ -361,11 +371,19 @@ function dateBasedAttendanceMapping(
       const dateKey = `${month}-${day}`;
       const matchedTemplateCol = templateDateMap.get(dateKey);
       if (matchedTemplateCol) {
-        // Allow multiple data columns to map to the same template column
-        // (different class groups may contribute to the same date slot)
+        // When merged pairs exist, map to (출결) column instead of (일정)
+        // Template wants attendance marks (Y/N/BZ), not schedule data (04(We))
+        let targetDataCol = dataCol;
+        if (hasMergedPairs && dataCol.endsWith('(일정)')) {
+          const 출결Col = dataCol.replace(/\(일정\)$/, '(출결)');
+          if (dataAttendanceCols.includes(출결Col)) {
+            targetDataCol = 출결Col;
+          }
+        }
+
         results.push({
           templateField: matchedTemplateCol,
-          dataColumn: dataCol,
+          dataColumn: targetDataCol,
           confidence: usedTemplateCols.has(matchedTemplateCol) ? 0.85 : 0.95,
           reason: `날짜 매칭 (${month}월 ${day}일)`,
         });
@@ -564,12 +582,16 @@ function attendanceAwareMapping(
           mappedTemplateFields.add(m.templateField);
         }
       } else {
-        // Fallback: positional matching
-        const matchCount = Math.min(templateAttendanceCols.length, dataAttendanceCols.length);
+        // Fallback: positional matching (prefer 출결 columns over 일정)
+        const hasPairs = dataAttendanceCols.some(c => /\((출결|일정)\)$/.test(c));
+        const positionalCols = hasPairs
+          ? dataAttendanceCols.filter(c => /\(출결\)$/.test(c))
+          : dataAttendanceCols;
+        const matchCount = Math.min(templateAttendanceCols.length, positionalCols.length);
         for (let i = 0; i < matchCount; i++) {
           results.push({
             templateField: templateAttendanceCols[i],
-            dataColumn: dataAttendanceCols[i],
+            dataColumn: positionalCols[i],
             confidence: 0.85,
             reason: `출결 날짜 위치 매칭 (${i + 1}번째)`,
           });
