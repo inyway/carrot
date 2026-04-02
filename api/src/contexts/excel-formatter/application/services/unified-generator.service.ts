@@ -13,6 +13,7 @@ import {
   extractCellValue,
   mergePairedRows,
   isRepeatedHeaderOrMetadata,
+  detectMultiRowHeaders,
 } from './utils/excel-utils';
 
 // 인터페이스 정의
@@ -296,16 +297,14 @@ export class UnifiedGeneratorService {
     const { headerRowNum: templateHeaderRow } =
       await findSmartHeaderRow(templateWs);
 
-    // 템플릿 컬럼 위치 매핑 (한 번만 계산)
-    const templateColumnIndex = new Map<string, number>();
-    const headerRow = templateWs.getRow(templateHeaderRow);
+    // Multi-row 헤더 감지 → composite 컬럼명으로 위치 매핑
+    const { compositeColumns, dataStartRow: templateDataStartRow } =
+      detectMultiRowHeaders(templateWs, templateHeaderRow);
 
-    headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-      const text = getCellText(cell);
-      if (text) {
-        templateColumnIndex.set(text, colNumber);
-      }
-    });
+    const templateColumnIndex = new Map<string, number>();
+    for (const { colIndex, name } of compositeColumns) {
+      templateColumnIndex.set(name, colIndex);
+    }
 
     // 매핑 맵 생성 (한 번만 계산)
     const mappingMap = new Map<string, string>();
@@ -315,8 +314,8 @@ export class UnifiedGeneratorService {
       }
     }
 
-    // 데이터 행 번호 (한 번만 계산)
-    const dataRowNum = templateHeaderRow + 1;
+    // 데이터 행 번호 (multi-row 헤더 이후)
+    const dataRowNum = templateDataStartRow;
 
     // 매핑 엔트리 배열 (한 번만 생성)
     const mappingEntries = Array.from(mappingMap.entries());
