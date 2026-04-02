@@ -34,3 +34,23 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# documents & data files (no PII in git)
+*.hwp
+*.hwpx
+*.pptx
+*.pdf
+*.xlsx
+!public/test-files/*.xlsx
+!assets/templates/*.xlsx
+
+# temp files
+.*_tmp.ts
+
+# tooling
+.serena/cache/
+api/dist/
+api/node_modules/
+
+# supabase local
+supabase/.temp/
