@@ -22,6 +22,16 @@ import {
   MappingContext,
   ProgressInfo,
 } from '../../../application/services/unified-generator.service';
+import {
+  findSmartHeaderRow,
+  detectMultiRowHeaders,
+  getCellText,
+  extractCellValue,
+  extractCsvData,
+  extractJsonData,
+  isRepeatedHeaderOrMetadata,
+  mergePairedRows,
+} from '../../../application/services/utils/excel-utils';
 
 // 작업 상태 저장소 (실제 운영 시 Redis 등 사용 권장)
 interface JobState {
@@ -162,47 +172,44 @@ export class UnifiedGenerateController {
   }
 
   /**
-   * 템플릿 분석 엔드포인트
+   * 템플릿/데이터 파일 분석 엔드포인트
    * POST /api/generate/analyze
    *
-   * 템플릿 형식에 따라 컬럼/필드 정보 추출
+   * 템플릿 형식에 따라 컬럼/필드 정보, 미리보기, 메타데이터 추출
    */
   @Post('analyze')
   @UseInterceptors(
-    FileFieldsInterceptor([{ name: 'template', maxCount: 1 }]),
+    FileFieldsInterceptor([
+      { name: 'template', maxCount: 1 },
+      { name: 'file', maxCount: 1 },
+    ]),
   )
   async analyzeTemplate(
-    @UploadedFiles() files: { template?: Express.Multer.File[] },
+    @UploadedFiles() files: { template?: Express.Multer.File[]; file?: Express.Multer.File[] },
     @Body('sheetName') sheetName: string | undefined,
+    @Body('format') formatHint: string | undefined,
   ): Promise<{
+    success: boolean;
     format: string;
-    sheets?: string[];
     columns?: string[];
-    cells?: Array<{ row: number; col: number; text: string }>;
+    sheets?: string[];
+    rowCount?: number;
+    preview?: Record<string, unknown>[];
+    metadata?: Record<string, string>;
+    error?: string;
   }> {
-    if (!files.template || files.template.length === 0) {
-      throw new BadRequestException('템플릿 파일이 필요합니다.');
+    const uploadedFile = files.template?.[0] || files.file?.[0];
+    if (!uploadedFile) {
+      throw new BadRequestException('파일이 필요합니다.');
     }
 
-    const templateFile = files.template[0];
-    const fileName = templateFile.originalname.toLowerCase();
-    const ext = fileName.split('.').pop();
-
-    console.log('[UnifiedGenerateController] Analyze template:', fileName);
-
-    // 형식별 분석 (간단한 구현)
-    if (ext === 'hwpx') {
-      // HWPX는 기존 HwpxController의 analyze 엔드포인트 사용 권장
-      return {
-        format: 'hwpx',
-        columns: [],
-      };
-    }
+    const fileName = uploadedFile.originalname.toLowerCase();
+    const ext = formatHint || fileName.split('.').pop();
 
     if (ext === 'xlsx' || ext === 'xls') {
       const ExcelJS = await import('exceljs');
       const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(templateFile.buffer as unknown as ArrayBuffer);
+      await workbook.xlsx.load(uploadedFile.buffer as unknown as ArrayBuffer);
 
       const sheets = workbook.worksheets.map((ws) => ws.name);
       const targetSheet = sheetName || sheets[0];
@@ -212,58 +219,86 @@ export class UnifiedGenerateController {
         throw new BadRequestException(`시트 "${targetSheet}"를 찾을 수 없습니다.`);
       }
 
-      // 헤더 행 찾기
-      const columns: string[] = [];
-      for (let rowNum = 1; rowNum <= 5; rowNum++) {
-        const row = worksheet.getRow(rowNum);
-        let hasData = false;
+      const { headerRowNum } = await findSmartHeaderRow(worksheet);
+      const { compositeColumns, dataStartRow } = detectMultiRowHeaders(
+        worksheet, headerRowNum,
+      );
 
+      const columns = compositeColumns.map(c => c.name);
+
+      // Metadata extraction from pre-header rows
+      const metadata: Record<string, string> = {};
+      for (let rowNum = 1; rowNum < headerRowNum; rowNum++) {
+        const row = worksheet.getRow(rowNum);
         row.eachCell({ includeEmpty: false }, (cell) => {
-          const value = cell.value;
-          if (value !== null && value !== undefined) {
-            hasData = true;
-            const text =
-              typeof value === 'object' && 'richText' in (value as object)
-                ? (value as { richText: Array<{ text: string }> }).richText
-                    .map((t) => t.text)
-                    .join('')
-                : String(value);
-            const trimmed = text.trim();
-            if (trimmed && trimmed !== 'undefined') {
-              columns.push(trimmed);
-            }
+          const text = getCellText(cell);
+          const match = text.match(/^(.+?)\s*:\s*(.+)$/);
+          if (match) {
+            metadata[match[1].trim()] = match[2].trim();
           }
         });
+      }
 
-        if (hasData && columns.length > 0) {
-          break;
+      // Preview data extraction (max 100 rows)
+      const preview: Record<string, unknown>[] = [];
+      for (let rowNum = dataStartRow; rowNum <= worksheet.rowCount && preview.length < 100; rowNum++) {
+        const row = worksheet.getRow(rowNum);
+        const rowData: Record<string, unknown> = {};
+        let hasData = false;
+
+        for (const { colIndex, name } of compositeColumns) {
+          const cell = row.getCell(colIndex);
+          const value = extractCellValue(cell);
+          if (value !== null && value !== undefined && value !== '') hasData = true;
+          rowData[name] = value;
+        }
+
+        if (hasData && !isRepeatedHeaderOrMetadata(rowData, columns)) {
+          preview.push(rowData);
         }
       }
 
+      // Try paired row merging
+      const merged = mergePairedRows(preview, columns);
+
       return {
+        success: true,
         format: 'excel',
         sheets,
-        columns,
+        columns: merged.columns,
+        rowCount: merged.rows.length,
+        preview: merged.rows.slice(0, 100),
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       };
     }
 
     if (ext === 'csv') {
-      const text = templateFile.buffer.toString('utf-8');
-      const lines = text.split(/\r?\n/).filter((line) => line.trim());
-      const columns =
-        lines.length > 0
-          ? lines[0].split(',').map((col) => col.trim().replace(/^"|"$/g, ''))
-          : [];
-
+      const { columns, data } = extractCsvData(uploadedFile.buffer);
       return {
+        success: true,
         format: 'csv',
         columns,
+        rowCount: data.length,
+        preview: data.slice(0, 100),
       };
     }
 
-    return {
-      format: 'unknown',
-    };
+    if (ext === 'json') {
+      const { columns, data } = extractJsonData(uploadedFile.buffer);
+      return {
+        success: true,
+        format: 'json',
+        columns,
+        rowCount: data.length,
+        preview: data.slice(0, 100),
+      };
+    }
+
+    if (ext === 'hwpx') {
+      return { success: true, format: 'hwpx', columns: [] };
+    }
+
+    return { success: false, format: 'unknown', error: '지원하지 않는 형식입니다.' };
   }
 
   /**
