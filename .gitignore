@@ -35,6 +35,24 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# documents & data files (no PII in git)
+*.hwp
+*.hwpx
+*.pptx
+*.pdf
+*.xlsx
+!public/test-files/*.xlsx
+!assets/templates/*.xlsx
+
+# temp files
+.*_tmp.ts
+
+# tooling
+.serena/cache/
+api/dist/
+api/node_modules/
+supabase/.temp/
+
 # stale subdirectory copy (root is the actual project)
 excel-report-formatter/
 
@@ -42,3 +60,5 @@ excel-report-formatter/
 teacher-scheduling-agent/
 opic-navi-main/
 SPAC/
+review automation/
+cd/
