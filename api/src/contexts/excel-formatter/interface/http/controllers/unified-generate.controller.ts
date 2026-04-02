@@ -22,6 +22,7 @@ import {
   MappingContext,
   ProgressInfo,
 } from '../../../application/services/unified-generator.service';
+import * as ExcelJS from 'exceljs';
 import {
   findSmartHeaderRow,
   detectMultiRowHeaders,
@@ -207,7 +208,6 @@ export class UnifiedGenerateController {
     const ext = formatHint || fileName.split('.').pop();
 
     if (ext === 'xlsx' || ext === 'xls') {
-      const ExcelJS = await import('exceljs');
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(uploadedFile.buffer as unknown as ArrayBuffer);
 
