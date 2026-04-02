@@ -11,6 +11,8 @@ import {
   extractJsonData as extractJsonDataUtil,
   escapeCsvValue,
   extractCellValue,
+  mergePairedRows,
+  isRepeatedHeaderOrMetadata,
 } from './utils/excel-utils';
 
 // 인터페이스 정의
@@ -682,13 +684,16 @@ export class UnifiedGeneratorService {
               }
             });
 
-            if (hasData) {
+            if (hasData && !isRepeatedHeaderOrMetadata(rowData, columns.map(c => c.name))) {
               data.push(rowData);
             }
           });
 
-          console.log('[UnifiedGenerator] Extracted data rows:', data.length);
-          return data;
+          // Apply paired row merging (schedule + attendance 2-row pattern)
+          const colNames = columns.map(c => c.name);
+          const merged = mergePairedRows(data, colNames);
+          console.log(`[UnifiedGenerator] Extracted data rows: ${data.length} → merged: ${merged.rows.length}`);
+          return merged.rows;
         } finally {
           // 메모리 릭 방지: workbook 정리
           workbook.worksheets.length = 0;
